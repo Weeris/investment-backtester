@@ -234,36 +234,42 @@ def calculate_supertrend(data, atr_multiplier=3, atr_window=10):
     df['Basic_Lower_Band'] = (df['High'] + df['Low']) / 2 - atr_multiplier * atr
     
     # Initialize Final Upper and Lower Bands
-    df['Final_Upper_Band'] = df['Basic_Upper_Band']
-    df['Final_Lower_Band'] = df['Basic_Lower_Band']
+    df['Final_Upper_Band'] = df['Basic_Upper_Band'].copy()
+    df['Final_Lower_Band'] = df['Basic_Lower_Band'].copy()
     
     # Calculate SuperTrend
     df['SuperTrend'] = np.nan
     
+    # Initialize the first SuperTrend value
+    df['SuperTrend'].iloc[0] = df['Final_Upper_Band'].iloc[0] if df['Close'].iloc[0] <= df['Final_Upper_Band'].iloc[0] else df['Final_Lower_Band'].iloc[0]
+    
     for i in range(1, len(df)):
         # Update Final Upper Band
-        if df['Basic_Upper_Band'].iloc[i] < df['Final_Upper_Band'].iloc[i-1] or df['Close'].iloc[i-1] > df['Final_Upper_Band'].iloc[i-1]:
-            df.loc[df.index[i], 'Final_Upper_Band'] = df['Basic_Upper_Band'].iloc[i]
-        else:
-            df.loc[df.index[i], 'Final_Upper_Band'] = df['Final_Upper_Band'].iloc[i-1]
+        df['Final_Upper_Band'].iloc[i] = min(df['Basic_Upper_Band'].iloc[i], df['Final_Upper_Band'].iloc[i-1])
+        if df['Close'].iloc[i-1] > df['Final_Upper_Band'].iloc[i-1]:
+            df['Final_Upper_Band'].iloc[i] = df['Basic_Upper_Band'].iloc[i]
         
         # Update Final Lower Band
-        if df['Basic_Lower_Band'].iloc[i] > df['Final_Lower_Band'].iloc[i-1] or df['Close'].iloc[i-1] < df['Final_Lower_Band'].iloc[i-1]:
-            df.loc[df.index[i], 'Final_Lower_Band'] = df['Basic_Lower_Band'].iloc[i]
-        else:
-            df.loc[df.index[i], 'Final_Lower_Band'] = df['Final_Lower_Band'].iloc[i-1]
+        df['Final_Lower_Band'].iloc[i] = max(df['Basic_Lower_Band'].iloc[i], df['Final_Lower_Band'].iloc[i-1])
+        if df['Close'].iloc[i-1] < df['Final_Lower_Band'].iloc[i-1]:
+            df['Final_Lower_Band'].iloc[i] = df['Basic_Lower_Band'].iloc[i]
         
         # Determine SuperTrend value
-        if pd.isna(df['SuperTrend'].iloc[i-1]) or df['SuperTrend'].iloc[i-1] == df['Final_Upper_Band'].iloc[i-1]:
+        if pd.isna(df['SuperTrend'].iloc[i-1]):
+            # For the first iteration after initialization
+            df['SuperTrend'].iloc[i] = df['Final_Upper_Band'].iloc[i] if df['Close'].iloc[i] <= df['Final_Upper_Band'].iloc[i] else df['Final_Lower_Band'].iloc[i]
+        elif df['SuperTrend'].iloc[i-1] == df['Final_Upper_Band'].iloc[i-1]:
+            # Previous SuperTrend was upper band
             if df['Close'].iloc[i] <= df['Final_Upper_Band'].iloc[i]:
-                df.loc[df.index[i], 'SuperTrend'] = df['Final_Upper_Band'].iloc[i]
+                df['SuperTrend'].iloc[i] = df['Final_Upper_Band'].iloc[i]
             else:
-                df.loc[df.index[i], 'SuperTrend'] = df['Final_Lower_Band'].iloc[i]
+                df['SuperTrend'].iloc[i] = df['Final_Lower_Band'].iloc[i]
         else:
+            # Previous SuperTrend was lower band
             if df['Close'].iloc[i] >= df['Final_Lower_Band'].iloc[i]:
-                df.loc[df.index[i], 'SuperTrend'] = df['Final_Lower_Band'].iloc[i]
+                df['SuperTrend'].iloc[i] = df['Final_Lower_Band'].iloc[i]
             else:
-                df.loc[df.index[i], 'SuperTrend'] = df['Final_Upper_Band'].iloc[i]
+                df['SuperTrend'].iloc[i] = df['Final_Upper_Band'].iloc[i]
     
     return df['SuperTrend']
 
