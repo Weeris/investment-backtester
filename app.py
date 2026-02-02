@@ -26,6 +26,7 @@ LANGUAGES = {
         'end_date_label': 'วันสิ้นสุด',
         'capital_label': 'ทุนเริ่มต้น',
         'strategy_label': 'กลยุทธ์การเทรด',
+        'super_trend': 'SuperTrend',
         'ema_settings': 'การตั้งค่า EMA',
         'rsi_settings': 'การตั้งค่า RSI',
         'position_size': 'ขนาดตำแหน่ง',
@@ -83,6 +84,7 @@ LANGUAGES = {
         'end_date_label': 'End Date',
         'capital_label': 'Initial Capital',
         'strategy_label': 'Trading Strategy',
+        'super_trend': 'SuperTrend',
         'ema_settings': 'EMA Settings',
         'rsi_settings': 'RSI Settings',
         'position_size': 'Position Size',
@@ -140,6 +142,7 @@ LANGUAGES = {
         'end_date_label': '结束日期',
         'capital_label': '初始资本',
         'strategy_label': '交易策略',
+        'super_trend': 'SuperTrend',
         'ema_settings': 'EMA设置',
         'rsi_settings': 'RSI设置',
         'position_size': '仓位大小',
@@ -219,6 +222,51 @@ def calculate_atr(data, window=14):
     atr = true_range.rolling(window=window).mean()
     return atr
 
+def calculate_supertrend(data, atr_multiplier=3, atr_window=10):
+    """Calculate SuperTrend indicator"""
+    df = data.copy()
+    
+    # Calculate ATR
+    atr = calculate_atr(df, atr_window)
+    
+    # Calculate Basic Upper and Lower Bands
+    df['Basic_Upper_Band'] = (df['High'] + df['Low']) / 2 + atr_multiplier * atr
+    df['Basic_Lower_Band'] = (df['High'] + df['Low']) / 2 - atr_multiplier * atr
+    
+    # Initialize Final Upper and Lower Bands
+    df['Final_Upper_Band'] = df['Basic_Upper_Band']
+    df['Final_Lower_Band'] = df['Basic_Lower_Band']
+    
+    # Calculate SuperTrend
+    df['SuperTrend'] = np.nan
+    
+    for i in range(1, len(df)):
+        # Update Final Upper Band
+        if df['Basic_Upper_Band'].iloc[i] < df['Final_Upper_Band'].iloc[i-1] or df['Close'].iloc[i-1] > df['Final_Upper_Band'].iloc[i-1]:
+            df.loc[df.index[i], 'Final_Upper_Band'] = df['Basic_Upper_Band'].iloc[i]
+        else:
+            df.loc[df.index[i], 'Final_Upper_Band'] = df['Final_Upper_Band'].iloc[i-1]
+        
+        # Update Final Lower Band
+        if df['Basic_Lower_Band'].iloc[i] > df['Final_Lower_Band'].iloc[i-1] or df['Close'].iloc[i-1] < df['Final_Lower_Band'].iloc[i-1]:
+            df.loc[df.index[i], 'Final_Lower_Band'] = df['Basic_Lower_Band'].iloc[i]
+        else:
+            df.loc[df.index[i], 'Final_Lower_Band'] = df['Final_Lower_Band'].iloc[i-1]
+        
+        # Determine SuperTrend value
+        if pd.isna(df['SuperTrend'].iloc[i-1]) or df['SuperTrend'].iloc[i-1] == df['Final_Upper_Band'].iloc[i-1]:
+            if df['Close'].iloc[i] <= df['Final_Upper_Band'].iloc[i]:
+                df.loc[df.index[i], 'SuperTrend'] = df['Final_Upper_Band'].iloc[i]
+            else:
+                df.loc[df.index[i], 'SuperTrend'] = df['Final_Lower_Band'].iloc[i]
+        else:
+            if df['Close'].iloc[i] >= df['Final_Lower_Band'].iloc[i]:
+                df.loc[df.index[i], 'SuperTrend'] = df['Final_Lower_Band'].iloc[i]
+            else:
+                df.loc[df.index[i], 'SuperTrend'] = df['Final_Upper_Band'].iloc[i]
+    
+    return df['SuperTrend']
+
 class MultiCurrencyBacktester:
     def __init__(self, symbol, start_date, end_date, initial_capital=10000, currency='THB'):
         self.symbol = symbol
@@ -257,12 +305,13 @@ class MultiCurrencyBacktester:
                         return False
             return False
 
-    def add_indicators(self, ema_fast_window=12, ema_slow_window=26, rsi_window=14):
+    def add_indicators(self, ema_fast_window=12, ema_slow_window=26, rsi_window=14, supertrend_multiplier=3, supertrend_window=10):
         """Add technical indicators using closing prices"""
         self.data['EMA_Fast'] = calculate_ema(self.data['Close'], ema_fast_window)
         self.data['EMA_Slow'] = calculate_ema(self.data['Close'], ema_slow_window)
         self.data['RSI'] = calculate_rsi(self.data['Close'], rsi_window)
         self.data['ATR'] = calculate_atr(self.data, 14)
+        self.data['SuperTrend'] = calculate_supertrend(self.data, supertrend_multiplier, supertrend_window)
 
     def generate_signals_by_strategy(self, strategy_type, ema_slow_window=26, rsi_buy_threshold=30, rsi_sell_threshold=70):
         """Generate buy/sell signals based on selected strategy using closing prices"""
@@ -295,6 +344,16 @@ class MultiCurrencyBacktester:
                     elif prev_row['RSI'] >= rsi_sell_threshold and current_row['RSI'] < rsi_sell_threshold:
                         sell_signal = True
             
+            elif strategy_type == "SuperTrend":
+                # SuperTrend strategy - Buy when price closes above SuperTrend, Sell when below
+                if not pd.isna(prev_row["SuperTrend"]) and not pd.isna(current_row["SuperTrend"]):
+                    # Buy when price moves above SuperTrend (uptrend)
+                    if prev_row["Close"] <= prev_row["SuperTrend"] and current_row["Close"] > current_row["SuperTrend"]:
+                        buy_signal = True
+                    # Sell when price moves below SuperTrend (downtrend)
+                    elif prev_row["Close"] >= prev_row["SuperTrend"] and current_row["Close"] < current_row["SuperTrend"]:
+                        sell_signal = True
+
             elif strategy_type == "Combined":
                 # Combined strategy using both EMA and RSI (using closing prices for indicators)
                 # Buy when EMA bullish AND RSI bullish
@@ -601,6 +660,7 @@ def main():
         options=[
             "EMA Crossover",
             "RSI Oversold/Oversold",
+            "SuperTrend",
             "Combined"
         ],
         index=0
@@ -729,6 +789,8 @@ def main():
         if strategy_type in ["EMA Crossover", "Combined"]:
             fig.add_trace(go.Scatter(x=data.index, y=data['EMA_Fast']*CURRENCY_RATES[st.session_state.currency], name=f'EMA{ema_fast} ({st.session_state.currency})', line=dict(color='orange')), row=1, col=1)
             fig.add_trace(go.Scatter(x=data.index, y=data['EMA_Slow']*CURRENCY_RATES[st.session_state.currency], name=f'EMA{ema_slow} ({st.session_state.currency})', line=dict(color='blue')), row=1, col=1)
+        if strategy_type in ["SuperTrend"]:
+            fig.add_trace(go.Scatter(x=data.index, y=data['SuperTrend']*CURRENCY_RATES[st.session_state.currency], name=f'SuperTrend ({st.session_state.currency})', line=dict(color='red', dash='dash')), row=1, col=1)
 
         # Add buy/sell markers
         if trades:
