@@ -10,11 +10,11 @@ import random
 
 # Technical indicators
 def calculate_ema(data, window):
-    """Calculate Exponential Moving Average"""
+    """Calculate Exponential Moving Average using closing prices"""
     return data.ewm(span=window).mean()
 
 def calculate_rsi(data, window=14):
-    """Calculate Relative Strength Index"""
+    """Calculate Relative Strength Index using closing prices"""
     delta = data.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
@@ -23,7 +23,7 @@ def calculate_rsi(data, window=14):
     return rsi
 
 def calculate_atr(data, window=14):
-    """Calculate Average True Range for volatility"""
+    """Calculate Average True Range for volatility using closing prices"""
     high_low = data['High'] - data['Low']
     high_close = np.abs(data['High'] - data['Close'].shift())
     low_close = np.abs(data['Low'] - data['Close'].shift())
@@ -31,7 +31,7 @@ def calculate_atr(data, window=14):
     atr = true_range.rolling(window=window).mean()
     return atr
 
-class FixedBacktester:
+class FinalBacktester:
     def __init__(self, symbol, start_date, end_date, initial_capital=10000):
         self.symbol = symbol
         self.start_date = start_date
@@ -50,14 +50,14 @@ class FixedBacktester:
         return not self.data.empty
 
     def add_indicators(self, ema_fast_window=12, ema_slow_window=26, rsi_window=14):
-        """Add technical indicators"""
+        """Add technical indicators using closing prices"""
         self.data['EMA_Fast'] = calculate_ema(self.data['Close'], ema_fast_window)
         self.data['EMA_Slow'] = calculate_ema(self.data['Close'], ema_slow_window)
         self.data['RSI'] = calculate_rsi(self.data['Close'], rsi_window)
         self.data['ATR'] = calculate_atr(self.data, 14)
 
     def generate_signals_by_strategy(self, strategy_type, rsi_buy_threshold=30, rsi_sell_threshold=70):
-        """Generate buy/sell signals based on selected strategy"""
+        """Generate buy/sell signals based on selected strategy using closing prices"""
         buy_signals = []
         sell_signals = []
         
@@ -70,24 +70,24 @@ class FixedBacktester:
             sell_signal = False
             
             if strategy_type == "EMA Crossover":
-                # Buy when fast EMA crosses above slow EMA
+                # Buy when fast EMA crosses above slow EMA (using closing prices for indicator)
                 if (prev_row['EMA_Fast'] <= prev_row['EMA_Slow']) and (current_row['EMA_Fast'] > current_row['EMA_Slow']):
                     buy_signal = True
-                # Sell when fast EMA crosses below slow EMA
+                # Sell when fast EMA crosses below slow EMA (using closing prices for indicator)
                 elif (prev_row['EMA_Fast'] >= prev_row['EMA_Slow']) and (current_row['EMA_Fast'] < current_row['EMA_Slow']):
                     sell_signal = True
             
             elif strategy_type == "RSI Oversold/Oversold":
-                # Buy when RSI is below threshold (oversold)
+                # Buy when RSI is below threshold (using closing prices for indicator)
                 if not pd.isna(prev_row['RSI']) and not pd.isna(current_row['RSI']):
                     if prev_row['RSI'] <= rsi_buy_threshold < current_row['RSI']:
                         buy_signal = True
-                    # Sell when RSI is above threshold (overbought)
+                    # Sell when RSI is above threshold (using closing prices for indicator)
                     elif prev_row['RSI'] >= rsi_sell_threshold > current_row['RSI']:
                         sell_signal = True
             
             elif strategy_type == "Combined":
-                # Combined strategy using both EMA and RSI
+                # Combined strategy using both EMA and RSI (using closing prices for indicators)
                 # Buy when EMA bullish AND RSI bullish
                 ema_bullish = (prev_row['EMA_Fast'] <= prev_row['EMA_Slow']) and (current_row['EMA_Fast'] > current_row['EMA_Slow'])
                 rsi_bullish = not pd.isna(prev_row['RSI']) and not pd.isna(current_row['RSI']) and \
@@ -115,7 +115,7 @@ class FixedBacktester:
 
     def run_backtest_by_strategy(self, strategy_type, position_size_pct=0.1, stop_loss_pct=None, take_profit_pct=None, 
                                 rsi_buy_threshold=30, rsi_sell_threshold=70, ema_fast_window=12, ema_slow_window=26):
-        """Run backtest with predefined strategy"""
+        """Run backtest with predefined strategy using closing prices for indicators and opening prices for transactions"""
         cash = self.initial_capital
         shares = 0
         portfolio_values = []
@@ -123,13 +123,15 @@ class FixedBacktester:
         entry_price = 0
         trade_start_date = None
         
-        # Generate signals based on strategy
+        # Generate signals based on strategy (using closing prices for indicators)
         buy_signals, sell_signals = self.generate_signals_by_strategy(
             strategy_type, rsi_buy_threshold, rsi_sell_threshold
         )
         
         for i, (date, row) in enumerate(self.data.iterrows()):
-            current_price = row['Close']
+            # Use OPENING price for actual buy/sell transactions
+            current_open_price = row['Open']
+            current_close_price = row['Close']
             
             # Check if we have valid signals for this day
             if i < len(buy_signals):
@@ -139,9 +141,9 @@ class FixedBacktester:
                 should_buy = False
                 should_sell = False
             
-            # Apply stop loss and take profit if in position
+            # Apply stop loss and take profit if in position (based on current open price)
             if in_position:
-                current_profit_pct = (current_price - entry_price) / entry_price
+                current_profit_pct = (current_open_price - entry_price) / entry_price
                 
                 # Stop loss
                 if stop_loss_pct and current_profit_pct <= -stop_loss_pct/100:
@@ -151,38 +153,38 @@ class FixedBacktester:
                 if take_profit_pct and current_profit_pct >= take_profit_pct/100:
                     should_sell = True
             
-            # Execute buy
+            # Execute buy using OPENING price
             if should_buy:
-                shares_to_buy = int((cash * position_size_pct) / current_price)
+                shares_to_buy = int((cash * position_size_pct) / current_open_price)
                 if shares_to_buy > 0:
                     shares += shares_to_buy
-                    cost = shares_to_buy * current_price
+                    cost = shares_to_buy * current_open_price  # Use opening price for transaction
                     cash -= cost
                     in_position = True
-                    entry_price = current_price
+                    entry_price = current_open_price  # Use opening price as entry price
                     trade_start_date = date
                     
                     self.trades.append({
                         'type': 'BUY',
                         'date': date,
-                        'price': current_price,
+                        'price': current_open_price,  # Opening price used for transaction
                         'shares': shares_to_buy,
                         'amount': cost,
-                        'portfolio_value': cash + shares * current_price
+                        'portfolio_value': cash + shares * current_close_price  # Use closing price for valuation
                     })
             
-            # Execute sell
+            # Execute sell using OPENING price
             elif should_sell:
-                sale_amount = shares * current_price
+                sale_amount = shares * current_open_price  # Use opening price for transaction
                 cash += sale_amount
                 
                 profit = sale_amount - (shares * entry_price)
-                profit_pct = ((current_price - entry_price) / entry_price) * 100
+                profit_pct = ((current_open_price - entry_price) / entry_price) * 100
                 
                 self.trades.append({
                     'type': 'SELL',
                     'date': date,
-                    'price': current_price,
+                    'price': current_open_price,  # Opening price used for transaction
                     'shares': shares,
                     'amount': sale_amount,
                     'portfolio_value': cash,
@@ -194,18 +196,18 @@ class FixedBacktester:
                 in_position = False
                 shares = 0
             
-            # Track portfolio value
-            portfolio_value = cash + shares * current_price
+            # Track portfolio value using closing price
+            portfolio_value = cash + shares * current_close_price  # Use closing price for portfolio value
             portfolio_values.append(portfolio_value)
         
         self.data['Portfolio_Value'] = portfolio_values
         return self.trades
 
 def main():
-    st.set_page_config(page_title="Fixed Investment Backtester", layout="wide")
-    st.title("📈 Fixed Investment Backtesting Platform")
+    st.set_page_config(page_title="Final Investment Backtester", layout="wide")
+    st.title("📈 Final Investment Backtesting Platform")
     st.markdown("""
-    Fixed backtesting with EMA and RSI strategies.
+    Final backtesting with EMA and RSI strategies using closing prices for indicators and opening prices for transactions.
     """)
     
     # Define symbol groups
@@ -326,7 +328,7 @@ def main():
     if st.sidebar.button("Run Backtest"):
         with st.spinner("Running backtest (this may take a moment due to API rate limits)..."):
             try:
-                backtester = FixedBacktester(symbol, start_date, end_date, initial_capital)
+                backtester = FinalBacktester(symbol, start_date, end_date, initial_capital)
                 
                 if backtester.load_data_with_delay():
                     backtester.add_indicators(ema_fast, ema_slow, 14)
