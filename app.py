@@ -31,7 +31,7 @@ def calculate_atr(data, window=14):
     atr = true_range.rolling(window=window).mean()
     return atr
 
-class BahtBacktester:
+class FixedBacktester:
     def __init__(self, symbol, start_date, end_date, initial_capital=10000):
         self.symbol = symbol
         self.start_date = start_date
@@ -62,7 +62,7 @@ class BahtBacktester:
         sell_signals = []
         
         # Ensure we have enough data points for EMA calculations
-        for i in range(26, len(self.data)):  # Using 26 as max window for EMA
+        for i in range(max(ema_slow_window, rsi_window), len(self.data)):  # Using max window for safety
             current_row = self.data.iloc[i]
             prev_row = self.data.iloc[i-1]
             
@@ -204,8 +204,8 @@ class BahtBacktester:
         return self.trades
 
 def main():
-    st.set_page_config(page_title="Investment Backtester (Baht)", layout="wide")
-    st.title("📈 ระบบย้อนกลับการลงทุน (หน่วยเงินบาท)")
+    st.set_page_config(page_title="Fixed Investment Backtester (Corrected)", layout="wide")
+    st.title("📈 ระบบย้อนกลับการลงทุน (หน่วยเงินบาท) - ฉบับแก้ไข")
     st.markdown("""
     ระบบย้อนกลับการลงทุนที่ใช้หน่วยเงินบาทไทย โดยใช้กลยุทธ์ EMA และ RSI ที่คำนวณจากราคาปิดและดำเนินการซื้อขายที่ราคาเปิด
     """)
@@ -332,10 +332,23 @@ def main():
     if st.sidebar.button("เริ่มการย้อนกลับ"):
         with st.spinner("กำลังดำเนินการย้อนกลับ (อาจใช้เวลาสักครู่เนื่องจากมีการจำกัดความถี่ของ API)..."):
             try:
-                backtester = BahtBacktester(symbol, start_date, end_date, initial_capital_usd)
+                backtester = FixedBacktester(symbol, start_date, end_date, initial_capital_usd)
                 
                 if backtester.load_data_with_delay():
                     backtester.add_indicators(ema_fast, ema_slow, 14)
+                    
+                    # Generate signals to check if there are any
+                    buy_signals, sell_signals = backtester.generate_signals_by_strategy(
+                        strategy_type, rsi_buy_threshold, rsi_sell_threshold
+                    )
+                    
+                    # Count signals
+                    buy_count = sum(1 for signal in buy_signals if signal)
+                    sell_count = sum(1 for signal in sell_signals if signal)
+                    
+                    if buy_count == 0 and sell_count == 0:
+                        st.warning(f"ไม่พบสัญญาณการซื้อหรือขายสำหรับกลยุทธ์ {strategy_type} บนสินทรัพย์ {symbol}")
+                        st.info("อาจเป็นเพราะช่วงเวลาที่เลือกไม่มีการเคลื่อนไหวที่เหมาะสม หรือพารามิเตอร์ที่ตั้งไว้ไม่เหมาะสม")
                     
                     # Convert percentage to decimal for stop loss and take profit
                     sl_pct = stop_loss if stop_loss > 0 else None
@@ -354,7 +367,7 @@ def main():
                     
                     st.session_state.backtester = backtester
                     st.session_state.trades = trades
-                    st.success("การย้อนกลับเสร็จสมบูรณ์!")
+                    st.success(f"การย้อนกลับเสร็จสมบูรณ์! พบสัญญาณซื้อ {buy_count} ครั้ง และสัญญาณขาย {sell_count} ครั้ง")
                 else:
                     st.error("ไม่สามารถโหลดข้อมูลสำหรับสัญลักษณ์และช่วงวันที่กำหนดได้")
             except Exception as e:
