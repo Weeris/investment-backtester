@@ -31,7 +31,7 @@ def calculate_atr(data, window=14):
     atr = true_range.rolling(window=window).mean()
     return atr
 
-class DebugBacktester:
+class FixedBacktester:
     def __init__(self, symbol, start_date, end_date, initial_capital=10000):
         self.symbol = symbol
         self.start_date = start_date
@@ -61,8 +61,8 @@ class DebugBacktester:
         buy_signals = []
         sell_signals = []
         
-        # Ensure we have enough data points
-        for i in range(max(ema_slow_window, rsi_window), len(self.data)):
+        # Ensure we have enough data points for EMA calculations
+        for i in range(26, len(self.data)):  # Using 26 as max window for EMA
             current_row = self.data.iloc[i]
             prev_row = self.data.iloc[i-1]
             
@@ -78,11 +78,11 @@ class DebugBacktester:
                     sell_signal = True
             
             elif strategy_type == "RSI Oversold/Oversold":
-                # Buy when RSI crosses from below threshold to above (becomes less oversold)
+                # Buy when RSI is below threshold (oversold)
                 if not pd.isna(prev_row['RSI']) and not pd.isna(current_row['RSI']):
                     if prev_row['RSI'] <= rsi_buy_threshold < current_row['RSI']:
                         buy_signal = True
-                    # Sell when RSI crosses from above threshold to below (becomes more overbought)
+                    # Sell when RSI is above threshold (overbought)
                     elif prev_row['RSI'] >= rsi_sell_threshold > current_row['RSI']:
                         sell_signal = True
             
@@ -128,9 +128,6 @@ class DebugBacktester:
             strategy_type, rsi_buy_threshold, rsi_sell_threshold
         )
         
-        # Track signals for debugging
-        debug_signals = []
-        
         for i, (date, row) in enumerate(self.data.iterrows()):
             current_price = row['Close']
             
@@ -173,8 +170,6 @@ class DebugBacktester:
                         'amount': cost,
                         'portfolio_value': cash + shares * current_price
                     })
-                    
-                    debug_signals.append(f"BUY at {current_price} on {date}")
             
             # Execute sell
             elif should_sell:
@@ -196,8 +191,6 @@ class DebugBacktester:
                     'holding_period': (date - trade_start_date).days if trade_start_date else 0
                 })
                 
-                debug_signals.append(f"SELL at {current_price} on {date}, Profit: ${profit:.2f} ({profit_pct:.2f}%)")
-                
                 in_position = False
                 shares = 0
             
@@ -206,13 +199,13 @@ class DebugBacktester:
             portfolio_values.append(portfolio_value)
         
         self.data['Portfolio_Value'] = portfolio_values
-        return self.trades, debug_signals
+        return self.trades
 
 def main():
-    st.set_page_config(page_title="Debug Investment Backtester", layout="wide")
-    st.title("📈 Debug Investment Backtesting Platform")
+    st.set_page_config(page_title="Fixed Investment Backtester", layout="wide")
+    st.title("📈 Fixed Investment Backtesting Platform")
     st.markdown("""
-    Debugging backtesting with EMA and RSI strategies.
+    Fixed backtesting with EMA and RSI strategies.
     """)
     
     # Define symbol groups
@@ -270,10 +263,17 @@ def main():
     )
     symbol = all_symbols[symbol_option]
     
-    # Date range
+    # Date range with new defaults
     col1, col2 = st.sidebar.columns(2)
-    start_date = col1.date_input("Start Date", value=datetime.today() - timedelta(days=365))
-    end_date = col2.date_input("End Date", value=datetime.today())
+    # Default start date to 2017/01/01
+    start_date = col1.date_input("Start Date", value=datetime(2017, 1, 1))
+    # Default end date to last business day before today
+    last_business_day = datetime.now() - timedelta(days=1)
+    if last_business_day.weekday() >= 5:  # Weekend
+        # Go back to Friday
+        days_back = last_business_day.weekday() - 4
+        last_business_day = last_business_day - timedelta(days=days_back)
+    end_date = col2.date_input("End Date", value=last_business_day.date())
     
     # Initial capital
     initial_capital = st.sidebar.number_input("Initial Capital ($)", value=10000, min_value=100, step=100)
@@ -321,14 +321,12 @@ def main():
         st.session_state.backtester = None
     if 'trades' not in st.session_state:
         st.session_state.trades = None
-    if 'debug_signals' not in st.session_state:
-        st.session_state.debug_signals = None
 
     # Run backtest button
     if st.sidebar.button("Run Backtest"):
         with st.spinner("Running backtest (this may take a moment due to API rate limits)..."):
             try:
-                backtester = DebugBacktester(symbol, start_date, end_date, initial_capital)
+                backtester = FixedBacktester(symbol, start_date, end_date, initial_capital)
                 
                 if backtester.load_data_with_delay():
                     backtester.add_indicators(ema_fast, ema_slow, 14)
@@ -337,7 +335,7 @@ def main():
                     sl_pct = stop_loss if stop_loss > 0 else None
                     tp_pct = take_profit if take_profit > 0 else None
                     
-                    trades, debug_signals = backtester.run_backtest_by_strategy(
+                    trades = backtester.run_backtest_by_strategy(
                         strategy_type,
                         position_size,
                         sl_pct,
@@ -350,9 +348,7 @@ def main():
                     
                     st.session_state.backtester = backtester
                     st.session_state.trades = trades
-                    st.session_state.debug_signals = debug_signals
                     st.success("Backtest completed successfully!")
-                    st.info(f"Generated {len(debug_signals)} trading signals")
                 else:
                     st.error("Failed to load data for the given symbol and date range")
             except Exception as e:
@@ -362,7 +358,6 @@ def main():
     if st.session_state.backtester and st.session_state.backtester.data is not None:
         data = st.session_state.backtester.data
         trades = st.session_state.trades
-        debug_signals = st.session_state.debug_signals
         
         # Display data summary
         col1, col2, col3, col4 = st.columns(4)
@@ -440,14 +435,6 @@ def main():
         fig.update_layout(height=900, showlegend=True)
         st.plotly_chart(fig, use_container_width=True)
         
-        # Debug signals
-        if debug_signals:
-            st.subheader("Debug Signals")
-            for signal in debug_signals[:20]:  # Show first 20 signals
-                st.write(signal)
-            if len(debug_signals) > 20:
-                st.write(f"... and {len(debug_signals) - 20} more signals")
-        
         # Trading results
         if trades:
             st.subheader("Trading Results")
@@ -473,29 +460,56 @@ def main():
             col3.metric("Final Value", f"${final_value:,.2f}")
             col4.metric("Total Return", f"{total_return:.2f}%")
             
-            # Detailed trade log
-            st.subheader("Trade Log")
+            # Detailed trade log - show pairs of buy/sell transactions
+            st.subheader("Trade Log (Buy/Sell Pairs)")
             if sell_trades:
-                trade_df = pd.DataFrame(sell_trades)
-                # Reorder columns for better display
-                trade_df = trade_df[['date', 'type', 'price', 'shares', 'amount', 'profit', 'profit_pct', 'holding_period']]
-                trade_df = trade_df.rename(columns={
-                    'date': 'Date',
-                    'type': 'Type',
-                    'price': 'Price',
-                    'shares': 'Shares',
-                    'amount': 'Amount',
-                    'profit': 'Profit',
-                    'profit_pct': 'Profit %',
-                    'holding_period': 'Hold Days'
-                })
-                st.dataframe(trade_df.style.format({
-                    'Price': '${:.2f}',
-                    'Amount': '${:.2f}',
-                    'Profit': '${:.2f}',
-                    'Profit %': '{:.2f}%',
-                    'Hold Days': '{:.0f}'
-                }))
+                # Pair up buy and sell transactions
+                trade_pairs = []
+                buy_iter = iter(buy_trades)
+                sell_iter = iter(sell_trades)
+                
+                try:
+                    current_buy = next(buy_iter)
+                    for current_sell in sell_iter:
+                        trade_pairs.append({
+                            'buy_date': current_buy['date'],
+                            'buy_price': current_buy['price'],
+                            'sell_date': current_sell['date'],
+                            'sell_price': current_sell['price'],
+                            'shares': current_buy['shares'],
+                            'profit': current_sell['profit'],
+                            'profit_pct': current_sell['profit_pct'],
+                            'holding_period': current_sell['holding_period']
+                        })
+                        
+                        # Get next buy for the next pair
+                        current_buy = next(buy_iter)
+                except StopIteration:
+                    # We've exhausted either buys or sells
+                    pass
+                
+                if trade_pairs:
+                    trade_pairs_df = pd.DataFrame(trade_pairs)
+                    trade_pairs_df = trade_pairs_df.rename(columns={
+                        'buy_date': 'Buy Date',
+                        'buy_price': 'Buy Price',
+                        'sell_date': 'Sell Date',
+                        'sell_price': 'Sell Price',
+                        'shares': 'Shares',
+                        'profit': 'Profit',
+                        'profit_pct': 'Profit %',
+                        'holding_period': 'Hold Days'
+                    })
+                    
+                    st.dataframe(trade_pairs_df.style.format({
+                        'Buy Price': '${:.2f}',
+                        'Sell Price': '${:.2f}',
+                        'Profit': '${:.2f}',
+                        'Profit %': '{:.2f}%',
+                        'Hold Days': '{:.0f}'
+                    }))
+                else:
+                    st.info("No paired buy/sell transactions to display")
             else:
                 st.info("No completed trades (buy + sell) to display")
         else:
