@@ -5,6 +5,8 @@ import yfinance as yf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
+import time
+import random
 
 # Technical indicators
 def calculate_ema(data, window):
@@ -39,15 +41,18 @@ class AdvancedBacktester:
         self.positions = []
         self.trades = []
 
-    def load_data(self):
-        """Load historical data"""
+    def load_data_with_delay(self):
+        """Load historical data with delay to avoid rate limits"""
+        # Add random delay to avoid rate limiting
+        time.sleep(random.uniform(0.5, 1.5))
         ticker = yf.Ticker(self.symbol)
         self.data = ticker.history(start=self.start_date, end=self.end_date, interval="1d")
         return not self.data.empty
 
-    def add_indicators(self, ema_window=20, rsi_window=14):
+    def add_indicators(self, ema_fast_window=12, ema_slow_window=26, rsi_window=14):
         """Add technical indicators"""
-        self.data['EMA'] = calculate_ema(self.data['Close'], ema_window)
+        self.data['EMA_Fast'] = calculate_ema(self.data['Close'], ema_fast_window)
+        self.data['EMA_Slow'] = calculate_ema(self.data['Close'], ema_slow_window)
         self.data['RSI'] = calculate_rsi(self.data['Close'], rsi_window)
         self.data['ATR'] = calculate_atr(self.data, 14)
 
@@ -63,12 +68,14 @@ class AdvancedBacktester:
         for i, (date, row) in enumerate(self.data.iterrows()):
             current_price = row['Close']
             current_rsi = row['RSI']
-            current_ema = row['EMA']
+            current_ema_fast = row['EMA_Fast']
+            current_ema_slow = row['EMA_Slow']
             
             # Check if we should buy
             should_buy = eval(buy_condition.format(
                 close=current_price,
-                ema=current_ema,
+                ema_fast=current_ema_fast,
+                ema_slow=current_ema_slow,
                 rsi=current_rsi,
                 high=row['High'],
                 low=row['Low'],
@@ -78,7 +85,8 @@ class AdvancedBacktester:
             # Check if we should sell
             should_sell = eval(sell_condition.format(
                 close=current_price,
-                ema=current_ema,
+                ema_fast=current_ema_fast,
+                ema_slow=current_ema_slow,
                 rsi=current_rsi,
                 high=row['High'],
                 low=row['Low'],
@@ -151,11 +159,60 @@ def main():
     Advanced backtesting with customizable indicators and trading strategies.
     """)
     
+    # Define symbol groups
+    symbol_groups = {
+        "Indices": [
+            ("^GSPC", "S&P 500"),
+            ("^STI", "SET Index"),
+            ("^SET50", "SET 50"),
+            ("^SET100", "SET 100")
+        ],
+        "US Stocks": [
+            ("AAPL", "Apple"),
+            ("NVDA", "NVIDIA"),
+            ("MSFT", "Microsoft"),
+            ("GOOGL", "Google"),
+            ("AMZN", "Amazon"),
+            ("TSLA", "Tesla")
+        ],
+        "International Stocks": [
+            ("01810.HK", "Xiaomi"),
+            ("2330.TW", "TSMC"),
+            ("BMW.DE", "BMW"),
+            ("NOKIA.HE", "Nokia")
+        ],
+        "Thai Stocks": [
+            ("PTT.BK", "PTT"),
+            ("SCC.BK", "Siam Cement"),
+            ("CPALL.BK", "CP ALL"),
+            ("KBANK.BK", "Kasikornbank"),
+            ("TRUE.BK", "TRUE Corporation")
+        ],
+        "Commodities & Crypto": [
+            ("GC=F", "Gold"),
+            ("CL=F", "Crude Oil"),
+            ("BTC-USD", "Bitcoin"),
+            ("ETH-USD", "Ethereum"),
+            ("XAU=", "Gold Spot")
+        ]
+    }
+    
+    # Flatten all symbols with descriptions
+    all_symbols = {}
+    for category, symbols in symbol_groups.items():
+        for symbol, name in symbols:
+            all_symbols[f"{name} ({symbol})"] = symbol
+    
     # Sidebar for inputs
     st.sidebar.header("Backtest Settings")
     
-    # Symbol input
-    symbol = st.sidebar.text_input("Stock Symbol", "AAPL")
+    # Symbol selection with dropdown
+    symbol_option = st.sidebar.selectbox(
+        "Stock/Symbol",
+        options=list(all_symbols.keys()),
+        format_func=lambda x: x
+    )
+    symbol = all_symbols[symbol_option]
     
     # Date range
     col1, col2 = st.sidebar.columns(2)
@@ -167,8 +224,14 @@ def main():
     
     # Technical indicators settings
     st.sidebar.subheader("Technical Indicators")
-    ema_window = st.sidebar.slider("EMA Window", 5, 50, 20)
-    rsi_window = st.sidebar.slider("RSI Window", 5, 30, 14)
+    
+    # EMA settings
+    ema_fast = st.sidebar.slider("Fast EMA Window", 5, 50, 12)
+    ema_slow = st.sidebar.slider("Slow EMA Window", 5, 50, 26)
+    
+    # RSI settings
+    rsi_buy_threshold = st.sidebar.slider("RSI Buy Threshold", 10, 50, 30)
+    rsi_sell_threshold = st.sidebar.slider("RSI Sell Threshold", 50, 90, 70)
     
     # Position sizing
     st.sidebar.subheader("Position Sizing")
@@ -182,18 +245,18 @@ def main():
     # Trading conditions
     st.sidebar.subheader("Trading Conditions")
     
-    # Default buy condition: Price above EMA and RSI below 30 (oversold)
+    # Default buy condition: Fast EMA crosses above Slow EMA and RSI below threshold
     buy_condition = st.sidebar.text_area(
         "Buy Condition", 
-        value="close > ema and rsi < 30",
-        help="Use variables: close, ema, rsi, high, low, open. Example: 'close > ema and rsi < 30'"
+        value=f"ema_fast > ema_slow and rsi < {rsi_buy_threshold}",
+        help="Use variables: close, ema_fast, ema_slow, rsi, high, low, open. Example: 'ema_fast > ema_slow and rsi < 30'"
     )
     
-    # Default sell condition: Price below EMA or RSI above 70 (overbought)
+    # Default sell condition: Fast EMA crosses below Slow EMA or RSI above threshold
     sell_condition = st.sidebar.text_area(
         "Sell Condition", 
-        value="close < ema or rsi > 70",
-        help="Use variables: close, ema, rsi, high, low, open. Example: 'close < ema or rsi > 70'"
+        value=f"ema_fast < ema_slow or rsi > {rsi_sell_threshold}",
+        help="Use variables: close, ema_fast, ema_slow, rsi, high, low, open. Example: 'ema_fast < ema_slow or rsi > 70'"
     )
     
     # Initialize session state
@@ -204,12 +267,12 @@ def main():
 
     # Run backtest button
     if st.sidebar.button("Run Backtest"):
-        with st.spinner("Running backtest..."):
+        with st.spinner("Running backtest (this may take a moment due to API rate limits)..."):
             try:
                 backtester = AdvancedBacktester(symbol, start_date, end_date, initial_capital)
                 
-                if backtester.load_data():
-                    backtester.add_indicators(ema_window, rsi_window)
+                if backtester.load_data_with_delay():
+                    backtester.add_indicators(ema_fast, ema_slow, 14)
                     
                     # Convert percentage to decimal for stop loss and take profit
                     sl_pct = stop_loss if stop_loss > 0 else None
@@ -248,13 +311,14 @@ def main():
             rows=3, cols=1, 
             shared_xaxes=True,
             vertical_spacing=0.08,
-            subplot_titles=('Price & EMA', 'RSI', 'Portfolio Value'),
+            subplot_titles=(f'{symbol} Price & EMAs', 'RSI', 'Portfolio Value'),
             row_heights=[0.4, 0.3, 0.3]
         )
         
-        # Price and EMA
+        # Price and EMAs
         fig.add_trace(go.Scatter(x=data.index, y=data['Close'], name='Close', line=dict(color='black')), row=1, col=1)
-        fig.add_trace(go.Scatter(x=data.index, y=data['EMA'], name=f'EMA{ema_window}', line=dict(color='orange')), row=1, col=1)
+        fig.add_trace(go.Scatter(x=data.index, y=data['EMA_Fast'], name=f'EMA{ema_fast}', line=dict(color='orange')), row=1, col=1)
+        fig.add_trace(go.Scatter(x=data.index, y=data['EMA_Slow'], name=f'EMA{ema_slow}', line=dict(color='blue')), row=1, col=1)
         
         # Add buy/sell markers
         if trades:
@@ -283,8 +347,8 @@ def main():
         
         # RSI
         fig.add_trace(go.Scatter(x=data.index, y=data['RSI'], name='RSI', line=dict(color='purple')), row=2, col=1)
-        fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1, annotation_text="Overbought")
-        fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1, annotation_text="Oversold")
+        fig.add_hline(y=rsi_sell_threshold, line_dash="dash", line_color="red", row=2, col=1, annotation_text="Sell Level")
+        fig.add_hline(y=rsi_buy_threshold, line_dash="dash", line_color="green", row=2, col=1, annotation_text="Buy Level")
         
         # Portfolio value
         if 'Portfolio_Value' in data.columns:
