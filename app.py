@@ -245,12 +245,13 @@ class MultiCurrencyBacktester:
         self.data['RSI'] = calculate_rsi(self.data['Close'], rsi_window)
         self.data['ATR'] = calculate_atr(self.data, 14)
 
-    def generate_signals_by_strategy(self, strategy_type, rsi_buy_threshold=30, rsi_sell_threshold=70):
+    def generate_signals_by_strategy(self, strategy_type, ema_slow_window=26, rsi_buy_threshold=30, rsi_sell_threshold=70):
         """Generate buy/sell signals based on selected strategy using closing prices"""
         buy_signals = []
         sell_signals = []
         
         # Ensure we have enough data points for EMA calculations
+        rsi_window = 14  # Standard RSI window
         for i in range(max(ema_slow_window, rsi_window), len(self.data)):  # Using max window for safety
             current_row = self.data.iloc[i]
             prev_row = self.data.iloc[i-1]
@@ -314,7 +315,7 @@ class MultiCurrencyBacktester:
         
         # Generate signals based on strategy (using closing prices for indicators)
         buy_signals, sell_signals = self.generate_signals_by_strategy(
-            strategy_type, rsi_buy_threshold, rsi_sell_threshold
+            strategy_type, ema_slow_window=ema_slow_window, rsi_buy_threshold=rsi_buy_threshold, rsi_sell_threshold=rsi_sell_threshold
         )
         
         for i, (date, row) in enumerate(self.data.iterrows()):
@@ -632,7 +633,7 @@ def main():
 
                     # Generate signals to check if there are any
                     buy_signals, sell_signals = backtester.generate_signals_by_strategy(
-                        strategy_type, rsi_buy_threshold, rsi_sell_threshold
+                        strategy_type, ema_slow_window=ema_slow, rsi_buy_threshold=rsi_buy_threshold, rsi_sell_threshold=rsi_sell_threshold
                     )
 
                     # Count signals
