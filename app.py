@@ -552,15 +552,6 @@ def main():
                 ("SAN.PA", "Sanofi (ฝรั่งเศส)"),
                 ("BP.L", "BP (อังกฤษ)"),
                 ("RIO.L", "Rio Tinto (อังกฤษ)")
-            ],
-            "หุ้นไทย": [
-                ("PTT.BK", "PTT"),
-                ("SCC.BK", "ซีเมนต์ไทย"),
-                ("CPALL.BK", "CP ALL"),
-                ("KBANK.BK", "ธนาคารกสิกรไทย"),
-                ("TRUE.BK", "TRUE"),
-                ("ADVANC.BK", "Advanced Info Service (AIS)"),
-                ("INTUCH.BK", "Intouch Holdings")
             ]
         }
     elif st.session_state.language == 'en':
@@ -604,15 +595,6 @@ def main():
                 ("SAN.PA", "Sanofi (France)"),
                 ("BP.L", "BP (UK)"),
                 ("RIO.L", "Rio Tinto (UK)")
-            ],
-            "Thai Stocks": [
-                ("PTT.BK", "PTT"),
-                ("SCC.BK", "Siam Cement"),
-                ("CPALL.BK", "CP ALL"),
-                ("KBANK.BK", "Kasikornbank"),
-                ("TRUE.BK", "TRUE Corporation"),
-                ("ADVANC.BK", "Advanced Info Service (AIS)"),
-                ("INTUCH.BK", "Intouch Holdings")
             ]
         }
     else:  # zh
@@ -656,15 +638,6 @@ def main():
                 ("SAN.PA", "赛诺菲 (法国)"),
                 ("BP.L", "英国石油 (英国)"),
                 ("RIO.L", "力拓 (英国)")
-            ],
-            "泰国股票": [
-                ("PTT.BK", "PTT"),
-                ("SCC.BK", "暹罗水泥"),
-                ("CPALL.BK", "CP ALL"),
-                ("KBANK.BK", "开泰银行"),
-                ("TRUE.BK", "TRUE"),
-                ("ADVANC.BK", "高级信息服务业 (AIS)"),
-                ("INTUCH.BK", "因特奇控股")
             ]
         }
 
@@ -707,15 +680,13 @@ def main():
         texts['strategy_label'],
         options=[
             "EMA Crossover",
-            "RSI Oversold/Oversold",
-            "SuperTrend",
-            "Combined"
+            "SuperTrend"
         ],
         index=0
     )
 
     # Show indicators based on selected strategy
-    if strategy_type in ["EMA Crossover", "Combined"]:
+    if strategy_type in ["EMA Crossover"]:
         st.sidebar.subheader(texts['ema_settings'])
         ema_fast = st.sidebar.slider(texts['fast_ema'], 5, 50, 12)
         ema_slow = st.sidebar.slider(texts['slow_ema'], 5, 50, 26)
@@ -723,7 +694,8 @@ def main():
         ema_fast = 12  # Default values
         ema_slow = 26
 
-    if strategy_type in ["RSI Oversold/Oversold", "Combined"]:
+    # RSI settings are only needed for RSI strategy (which was removed)
+    if strategy_type in []:
         st.sidebar.subheader(texts['rsi_settings'])
         rsi_buy_threshold = st.sidebar.slider(texts['buy_threshold'], 10, 50, 30)
         rsi_sell_threshold = st.sidebar.slider(texts['sell_threshold'], 50, 90, 70)
@@ -753,7 +725,7 @@ def main():
                 backtester = MultiCurrencyBacktester(symbol, start_date, end_date, initial_capital_usd, st.session_state.currency)
 
                 if backtester.load_data_with_delay():
-                    backtester.add_indicators(ema_fast, ema_slow, 14)
+                    backtester.add_indicators(ema_fast, ema_slow, 14, 3, 10)  # Always calculate SuperTrend with default parameters
 
                     # Generate signals to check if there are any
                     buy_signals, sell_signals = backtester.generate_signals_by_strategy(
@@ -808,12 +780,12 @@ def main():
         col6.metric(texts['size_percent'], f"{position_size*100:.0f}%")
 
         # Show strategy-specific parameters
-        if strategy_type in ["EMA Crossover", "Combined"]:
+        if strategy_type in ["EMA Crossover"]:
             col7, col8 = st.columns(2)
             col7.metric(texts['fast_ema'], ema_fast)
             col8.metric(texts['slow_ema'], ema_slow)
 
-        if strategy_type in ["RSI Oversold/Oversold", "Combined"]:
+        if strategy_type in []:
             col9, col10 = st.columns(2)
             col9.metric(texts['buy_threshold'], rsi_buy_threshold)
             col10.metric(texts['sell_threshold'], rsi_sell_threshold)
@@ -834,10 +806,10 @@ def main():
 
         # Price and EMAs (converted to selected currency)
         fig.add_trace(go.Scatter(x=data.index, y=data['Close']*CURRENCY_RATES[st.session_state.currency], name=f'Close ({st.session_state.currency})', line=dict(color='black')), row=1, col=1)
-        if strategy_type in ["EMA Crossover", "Combined"]:
+        if strategy_type in ["EMA Crossover"]:
             fig.add_trace(go.Scatter(x=data.index, y=data['EMA_Fast']*CURRENCY_RATES[st.session_state.currency], name=f'EMA{ema_fast} ({st.session_state.currency})', line=dict(color='orange')), row=1, col=1)
             fig.add_trace(go.Scatter(x=data.index, y=data['EMA_Slow']*CURRENCY_RATES[st.session_state.currency], name=f'EMA{ema_slow} ({st.session_state.currency})', line=dict(color='blue')), row=1, col=1)
-        if strategy_type in ["SuperTrend"]:
+        if strategy_type in ["SuperTrend"] and 'SuperTrend' in data.columns:
             fig.add_trace(go.Scatter(x=data.index, y=data['SuperTrend']*CURRENCY_RATES[st.session_state.currency], name=f'SuperTrend ({st.session_state.currency})', line=dict(color='red', dash='dash')), row=1, col=1)
 
         # Add buy/sell markers
@@ -867,8 +839,8 @@ def main():
                     marker=dict(color='red', size=10, symbol='triangle-down')
                 ), row=1, col=1)
 
-        # RSI
-        if strategy_type in ["RSI Oversold/Oversold", "Combined"]:
+        # RSI - Only show for RSI strategy (removed)
+        if strategy_type in []:
             fig.add_trace(go.Scatter(x=data.index, y=data['RSI'], name='RSI', line=dict(color='purple')), row=2, col=1)
             fig.add_hline(y=rsi_sell_threshold, line_dash="dash", line_color="red", row=2, col=1, annotation_text=texts['sell_level'])
             fig.add_hline(y=rsi_buy_threshold, line_dash="dash", line_color="green", row=2, col=1, annotation_text=texts['buy_level'])
