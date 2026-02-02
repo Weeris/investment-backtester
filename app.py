@@ -4,9 +4,8 @@ import numpy as np
 import yfinance as yf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import pickle
-import os
 from datetime import datetime, timedelta
+import time
 
 # Technical indicators
 def calculate_sma(data, window):
@@ -76,9 +75,13 @@ class DataLoader:
     
     def get_historical_data(self, symbol: str, period: str = "5y") -> pd.DataFrame:
         """Get historical data for a symbol"""
-        ticker = yf.Ticker(symbol)
-        data = ticker.history(period=period)
-        return data
+        try:
+            ticker = yf.Ticker(symbol)
+            data = ticker.history(period=period)
+            return data
+        except Exception as e:
+            st.error(f"Error fetching data for {symbol}: {str(e)}")
+            return pd.DataFrame()
 
 class ResultsAnalyzer:
     """Analyze backtesting results"""
@@ -92,31 +95,37 @@ class ResultsAnalyzer:
         strategy_returns = results_df['strategy_returns'].dropna()
         benchmark_returns = results_df['returns'].dropna()
         
+        if len(strategy_returns) == 0 or len(benchmark_returns) == 0:
+            return {}
+        
         # Calculate cumulative returns
         cumulative_strategy = (1 + strategy_returns).cumprod()
         cumulative_benchmark = (1 + benchmark_returns).cumprod()
         
         # Total returns
-        total_strategy_return = cumulative_strategy.iloc[-1] - 1
-        total_benchmark_return = cumulative_benchmark.iloc[-1] - 1
+        total_strategy_return = cumulative_strategy.iloc[-1] - 1 if len(cumulative_strategy) > 0 else 0
+        total_benchmark_return = cumulative_benchmark.iloc[-1] - 1 if len(cumulative_benchmark) > 0 else 0
         
         # Annualized returns
         years = len(strategy_returns) / 252  # Trading days assumption
-        annualized_strategy_return = (cumulative_strategy.iloc[-1]) ** (1 / years) - 1 if years > 0 else 0
-        annualized_benchmark_return = (cumulative_benchmark.iloc[-1]) ** (1 / years) - 1 if years > 0 else 0
+        annualized_strategy_return = (cumulative_strategy.iloc[-1]) ** (1 / years) - 1 if years > 0 and len(cumulative_strategy) > 0 else 0
+        annualized_benchmark_return = (cumulative_benchmark.iloc[-1]) ** (1 / years) - 1 if years > 0 and len(cumulative_benchmark) > 0 else 0
         
         # Volatility
-        strategy_volatility = strategy_returns.std() * np.sqrt(252)
-        benchmark_volatility = benchmark_returns.std() * np.sqrt(252)
+        strategy_volatility = strategy_returns.std() * np.sqrt(252) if len(strategy_returns) > 0 else 0
+        benchmark_volatility = benchmark_returns.std() * np.sqrt(252) if len(benchmark_returns) > 0 else 0
         
         # Sharpe Ratio (assuming 0% risk-free rate)
         sharpe_ratio = (annualized_strategy_return - 0) / strategy_volatility if strategy_volatility != 0 else 0
         benchmark_sharpe = (annualized_benchmark_return - 0) / benchmark_volatility if benchmark_volatility != 0 else 0
         
         # Maximum Drawdown
-        rolling_max = cumulative_strategy.expanding().max()
-        drawdown = (cumulative_strategy - rolling_max) / rolling_max
-        max_drawdown = drawdown.min()
+        if len(cumulative_strategy) > 0:
+            rolling_max = cumulative_strategy.expanding().max()
+            drawdown = (cumulative_strategy - rolling_max) / rolling_max
+            max_drawdown = drawdown.min()
+        else:
+            max_drawdown = 0
         
         # Win rate
         win_rate = (strategy_returns > 0).sum() / len(strategy_returns) if len(strategy_returns) > 0 else 0
@@ -132,7 +141,7 @@ class ResultsAnalyzer:
             'benchmark_sharpe': benchmark_sharpe,
             'max_drawdown': max_drawdown,
             'win_rate': win_rate,
-            'total_trades': len([x for x in results_df['signal'] if x != 0])
+            'total_trades': len([x for x in results_df['signal'] if x != 0]) if 'signal' in results_df.columns else 0
         }
 
 # Streamlit app
@@ -157,7 +166,7 @@ def main():
     use_sma20 = st.sidebar.checkbox("SMA20", value=True)
     use_sma50 = st.sidebar.checkbox("SMA50", value=True)
     use_rsi = st.sidebar.checkbox("RSI", value=True)
-    use_macd = st.sidebar.checkbox("MACD", value=True)
+    use_macd = st.sidebar.checkbox("MACD", value=False)
     use_bb = st.sidebar.checkbox("Bollinger Bands", value=True)
     
     # Initialize session state
@@ -170,18 +179,18 @@ def main():
     if st.sidebar.button("Load Data"):
         with st.spinner(f"Loading data for {symbol.upper()}..."):
             loader = DataLoader()
-            try:
-                st.session_state.data = loader.get_historical_data(symbol.upper(), period)
+            st.session_state.data = loader.get_historical_data(symbol.upper(), period)
+            if not st.session_state.data.empty:
                 st.success(f"Data loaded for {symbol.upper()} ({len(st.session_state.data)} records)")
-            except Exception as e:
-                st.error(f"Error loading data: {str(e)}")
+            else:
+                st.warning(f"No data found for {symbol.upper()}. Please check the symbol.")
 
     # Main content
     col1, col2 = st.columns(2)
     
     with col1:
         st.subheader(f"Stock Data: {symbol.upper()}")
-        if st.session_state.data is not None:
+        if st.session_state.data is not None and not st.session_state.data.empty:
             st.dataframe(st.session_state.data.tail())
         else:
             st.info("Load data to begin")
@@ -197,10 +206,13 @@ def main():
         if use_rsi: indicators.append("RSI")
         if use_macd: indicators.append("MACD")
         if use_bb: indicators.append("Bollinger Bands")
-        st.write(", ".join(indicators) if indicators else "None")
+        if indicators:
+            st.write(", ".join(indicators))
+        else:
+            st.write("None")
 
     # Process data and calculate indicators
-    if st.session_state.data is not None:
+    if st.session_state.data is not None and not st.session_state.data.empty:
         data = st.session_state.data.copy()
         
         # Calculate selected indicators
@@ -226,7 +238,7 @@ def main():
                 strategy = StrategyBuilder()
                 st.session_state.results = strategy.backtest(data)
                 
-                if st.session_state.results is not None:
+                if st.session_state.results is not None and not st.session_state.results.empty:
                     st.success("Backtest completed successfully!")
                 else:
                     st.error("Error running backtest")
@@ -254,11 +266,10 @@ def main():
                 fig.add_trace(go.Scatter(x=data.index, y=data['SMA50'], 
                                         name='SMA50', line=dict(color='blue')), 
                              row=1, col=1)
-            if 'BB_Upper' in data.columns:
+            if 'BB_Upper' in data.columns and 'BB_Lower' in data.columns:
                 fig.add_trace(go.Scatter(x=data.index, y=data['BB_Upper'], 
                                         name='BB Upper', line=dict(color='gray', dash='dash')), 
                              row=1, col=1)
-            if 'BB_Lower' in data.columns:
                 fig.add_trace(go.Scatter(x=data.index, y=data['BB_Lower'], 
                                         name='BB Lower', line=dict(color='gray', dash='dash')), 
                              row=1, col=1)
@@ -272,12 +283,15 @@ def main():
                              annotation_text="Overbought", row=2, col=1)
                 fig.add_hline(y=30, line_dash="dash", line_color="green", 
                              annotation_text="Oversold", row=2, col=1)
+            else:
+                # Add empty trace to maintain subplot structure
+                fig.add_trace(go.Scatter(x=[], y=[]), row=2, col=1)
             
             fig.update_layout(height=600, showlegend=True)
             st.plotly_chart(fig, use_container_width=True)
         
         # Display results if backtest was run
-        if st.session_state.results is not None:
+        if st.session_state.results is not None and not st.session_state.results.empty:
             st.subheader("Backtest Results")
             
             # Calculate metrics
