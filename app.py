@@ -46,7 +46,7 @@ class AdvancedBacktester:
         # Add random delay to avoid rate limiting
         time.sleep(random.uniform(0.5, 1.5))
         ticker = yf.Ticker(self.symbol)
-        self.data = ticker.history(start=self.start_date, end=self.end_date, interval="1d")
+        self.data = ticker.history(start=self.start_date, end=end_date, interval="1d")
         return not self.data.empty
 
     def add_indicators(self, ema_fast_window=12, ema_slow_window=26, rsi_window=14):
@@ -55,6 +55,24 @@ class AdvancedBacktester:
         self.data['EMA_Slow'] = calculate_ema(self.data['Close'], ema_slow_window)
         self.data['RSI'] = calculate_rsi(self.data['Close'], rsi_window)
         self.data['ATR'] = calculate_atr(self.data, 14)
+
+    def evaluate_condition(self, condition_str, current_values):
+        """Safely evaluate trading conditions"""
+        # Define the variables in the local scope
+        close = current_values['close']
+        ema_fast = current_values['ema_fast']
+        ema_slow = current_values['ema_slow']
+        rsi = current_values['rsi']
+        high = current_values['high']
+        low = current_values['low']
+        open_val = current_values['open']
+        
+        # Safely evaluate the condition
+        try:
+            return eval(condition_str)
+        except Exception as e:
+            # If there's an error, return False as a fallback
+            return False
 
     def run_backtest(self, buy_condition, sell_condition, position_size_pct=0.1, stop_loss_pct=None, take_profit_pct=None):
         """Run backtest with custom conditions"""
@@ -71,27 +89,22 @@ class AdvancedBacktester:
             current_ema_fast = row['EMA_Fast']
             current_ema_slow = row['EMA_Slow']
             
+            # Prepare current values for condition evaluation
+            current_values = {
+                'close': current_price,
+                'ema_fast': current_ema_fast,
+                'ema_slow': current_ema_slow,
+                'rsi': current_rsi,
+                'high': row['High'],
+                'low': row['Low'],
+                'open': row['Open']
+            }
+            
             # Check if we should buy
-            should_buy = eval(buy_condition.format(
-                close=current_price,
-                ema_fast=current_ema_fast,
-                ema_slow=current_ema_slow,
-                rsi=current_rsi,
-                high=row['High'],
-                low=row['Low'],
-                open=row['Open']
-            )) if buy_condition else False
+            should_buy = self.evaluate_condition(buy_condition, current_values)
             
             # Check if we should sell
-            should_sell = eval(sell_condition.format(
-                close=current_price,
-                ema_fast=current_ema_fast,
-                ema_slow=current_ema_slow,
-                rsi=current_rsi,
-                high=row['High'],
-                low=row['Low'],
-                open=row['Open']
-            )) if sell_condition else False
+            should_sell = self.evaluate_condition(sell_condition, current_values)
             
             # Apply stop loss and take profit if in position
             if in_position:
