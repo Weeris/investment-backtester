@@ -235,8 +235,27 @@ class MultiCurrencyBacktester:
         # Add random delay to avoid rate limiting
         time.sleep(random.uniform(0.5, 1.5))
         ticker = yf.Ticker(self.symbol)
-        self.data = ticker.history(start=self.start_date, end=self.end_date, interval="1d")
-        return not self.data.empty
+        try:
+            self.data = ticker.history(start=self.start_date, end=self.end_date, interval="1d")
+            return not self.data.empty
+        except Exception as e:
+            # Some Thai stocks might need different approach
+            if "BK" in self.symbol or self.symbol in ["^STI", "^SET50", "^SET100"]:
+                # Try with different parameters for Thai market
+                try:
+                    self.data = ticker.history(start=self.start_date, end=self.end_date, interval="1d", auto_adjust=True)
+                    return not self.data.empty
+                except:
+                    # If still fails, try a broader date range
+                    try:
+                        adjusted_start = self.start_date - timedelta(days=30)  # Try 30 days earlier
+                        self.data = ticker.history(start=adjusted_start, end=self.end_date, interval="1d", auto_adjust=True)
+                        # Filter back to original date range
+                        self.data = self.data[self.data.index.date >= self.start_date]
+                        return not self.data.empty
+                    except:
+                        return False
+            return False
 
     def add_indicators(self, ema_fast_window=12, ema_slow_window=26, rsi_window=14):
         """Add technical indicators using closing prices"""
@@ -450,7 +469,7 @@ def main():
                 ("TSLA", "Tesla")
             ],
             "หุ้นต่างประเทศ": [
-                ("01810.HK", "Xiaomi"),
+                ("1810.HK", "Xiaomi"),  # Xiaomi stock symbol
                 ("2330.TW", "TSMC"),
                 ("BMW.DE", "BMW"),
                 ("NOKIA.HE", "Nokia")
@@ -463,11 +482,10 @@ def main():
                 ("TRUE.BK", "TRUE")
             ],
             "สินทรัพย์อื่นๆ": [
-                ("GC=F", "ทองคำ"),
-                ("CL=F", "น้ำมันดิบ"),
+                ("GC=F", "ทองคำ SPOT"),  # Gold spot only
                 ("BTC-USD", "Bitcoin"),
                 ("ETH-USD", "Ethereum"),
-                ("XAU=", "ทองคำ SPOT")
+                ("XAU=", "ทองคำ")  # Keep both formats for gold
             ]
         }
     elif st.session_state.language == 'en':
@@ -487,7 +505,7 @@ def main():
                 ("TSLA", "Tesla")
             ],
             "International Stocks": [
-                ("01810.HK", "Xiaomi"),
+                ("1810.HK", "Xiaomi"),  # Xiaomi stock symbol
                 ("2330.TW", "TSMC"),
                 ("BMW.DE", "BMW"),
                 ("NOKIA.HE", "Nokia")
@@ -500,11 +518,10 @@ def main():
                 ("TRUE.BK", "TRUE Corporation")
             ],
             "Other Assets": [
-                ("GC=F", "Gold"),
-                ("CL=F", "Crude Oil"),
+                ("GC=F", "Gold Spot"),  # Gold spot only
                 ("BTC-USD", "Bitcoin"),
                 ("ETH-USD", "Ethereum"),
-                ("XAU=", "Gold Spot")
+                ("XAU=", "Gold")  # Keep both formats for gold
             ]
         }
     else:  # zh
@@ -524,7 +541,7 @@ def main():
                 ("TSLA", "特斯拉")
             ],
             "国际股票": [
-                ("01810.HK", "小米"),
+                ("1810.HK", "小米"),  # Xiaomi stock symbol
                 ("2330.TW", "台积电"),
                 ("BMW.DE", "宝马"),
                 ("NOKIA.HE", "诺基亚")
@@ -537,11 +554,10 @@ def main():
                 ("TRUE.BK", "TRUE")
             ],
             "其他资产": [
-                ("GC=F", "黄金"),
-                ("CL=F", "原油"),
+                ("GC=F", "现货黄金"),  # Gold spot only
                 ("BTC-USD", "比特币"),
                 ("ETH-USD", "以太坊"),
-                ("XAU=", "现货黄金")
+                ("XAU=", "黄金")  # Keep both formats for gold
             ]
         }
 
@@ -783,63 +799,56 @@ def main():
 
             # Detailed trade log - show pairs of buy/sell transactions
             st.subheader(texts['trade_log'])
-            if sell_trades:
-                # Pair up buy and sell transactions
-                trade_pairs = []
-                buy_iter = iter(buy_trades)
-                sell_iter = iter(sell_trades)
-
-                try:
-                    current_buy = next(buy_iter)
-                    for current_sell in sell_iter:
-                        trade_pairs.append({
-                            'buy_date': current_buy['date'],
-                            'buy_price': current_buy['price'],
-                            'buy_price_converted': current_buy['price'] * CURRENCY_RATES[st.session_state.currency],
-                            'sell_date': current_sell['date'],
-                            'sell_price': current_sell['price'],
-                            'sell_price_converted': current_sell['price'] * CURRENCY_RATES[st.session_state.currency],
-                            'shares': current_buy['shares'],
-                            'profit_usd': current_sell['profit'],
-                            'profit_converted': current_sell['profit'] * CURRENCY_RATES[st.session_state.currency],
-                            'profit_pct': current_sell['profit_pct'],
-                            'holding_period': current_sell['holding_period']
-                        })
-
-                        # Get next buy for the next pair
-                        current_buy = next(buy_iter)
-                except StopIteration:
-                    # We've exhausted either buys or sells
-                    pass
-
-                if trade_pairs:
-                    trade_pairs_df = pd.DataFrame(trade_pairs)
-                    trade_pairs_df = trade_pairs_df.rename(columns={
-                        'buy_date': texts['buy_date'],
-                        'buy_price_converted': f"{texts['buy_price']} ({st.session_state.currency})",
-                        'sell_date': texts['sell_date'],
-                        'sell_price_converted': f"{texts['sell_price']} ({st.session_state.currency})",
-                        'shares': texts['shares'],
-                        'profit_converted': f"{texts['profit']} ({st.session_state.currency})",
-                        'profit_pct': texts['profit_pct'],
-                        'holding_period': texts['holding_period']
+            
+            # Pair up buy and sell transactions - each sell corresponds to the most recent buy
+            trade_pairs = []
+            available_buys = buy_trades.copy()
+            
+            for sell_trade in sell_trades:
+                if available_buys:  # If there are available buy trades to match
+                    # Take the most recent buy (FIFO - First In, First Out)
+                    buy_trade = available_buys.pop(0)
+                    
+                    trade_pairs.append({
+                        'buy_date': buy_trade['date'].strftime('%Y-%m-%d'),  # Format date without time
+                        'buy_price': buy_trade['price'],
+                        'buy_price_converted': buy_trade['price'] * CURRENCY_RATES[st.session_state.currency],
+                        'sell_date': sell_trade['date'].strftime('%Y-%m-%d'),  # Format date without time
+                        'sell_price': sell_trade['price'],
+                        'sell_price_converted': sell_trade['price'] * CURRENCY_RATES[st.session_state.currency],
+                        'shares': buy_trade['shares'],
+                        'profit_usd': sell_trade['profit'],
+                        'profit_converted': sell_trade['profit'] * CURRENCY_RATES[st.session_state.currency],
+                        'profit_pct': sell_trade['profit_pct'],
+                        'holding_period': sell_trade['holding_period']
                     })
+            
+            if trade_pairs:
+                trade_pairs_df = pd.DataFrame(trade_pairs)
+                trade_pairs_df = trade_pairs_df.rename(columns={
+                    'buy_date': texts['buy_date'],
+                    'buy_price_converted': f"{texts['buy_price']} ({st.session_state.currency})",
+                    'sell_date': texts['sell_date'],
+                    'sell_price_converted': f"{texts['sell_price']} ({st.session_state.currency})",
+                    'shares': texts['shares'],
+                    'profit_converted': f"{texts['profit']} ({st.session_state.currency})",
+                    'profit_pct': texts['profit_pct'],
+                    'holding_period': texts['holding_period']
+                })
 
-                    # Format the DataFrame to show converted amounts
-                    display_cols = [texts['buy_date'], f"{texts['buy_price']} ({st.session_state.currency})", 
-                                   texts['sell_date'], f"{texts['sell_price']} ({st.session_state.currency})", 
-                                   texts['shares'], f"{texts['profit']} ({st.session_state.currency})", 
-                                   texts['profit_pct'], texts['holding_period']]
-                                   
-                    st.dataframe(trade_pairs_df[display_cols].style.format({
-                        f"{texts['buy_price']} ({st.session_state.currency})": f'{currency_symbol}{{:,.2f}}',
-                        f"{texts['sell_price']} ({st.session_state.currency})": f'{currency_symbol}{{:,.2f}}',
-                        f"{texts['profit']} ({st.session_state.currency})": f'{currency_symbol}{{:,.2f}}',
-                        texts['profit_pct']: '{:.2f}%',
-                        texts['holding_period']: '{:.0f}'
-                    }))
-                else:
-                    st.info(texts['no_trades_found'])
+                # Format the DataFrame to show converted amounts
+                display_cols = [texts['buy_date'], f"{texts['buy_price']} ({st.session_state.currency})", 
+                               texts['sell_date'], f"{texts['sell_price']} ({st.session_state.currency})", 
+                               texts['shares'], f"{texts['profit']} ({st.session_state.currency})", 
+                               texts['profit_pct'], texts['holding_period']]
+                               
+                st.dataframe(trade_pairs_df[display_cols].style.format({
+                    f"{texts['buy_price']} ({st.session_state.currency})": f'{currency_symbol}{{:,.2f}}',
+                    f"{texts['sell_price']} ({st.session_state.currency})": f'{currency_symbol}{{:,.2f}}',
+                    f"{texts['profit']} ({st.session_state.currency})": f'{currency_symbol}{{:,.2f}}',
+                    texts['profit_pct']: '{:.2f}%',
+                    texts['holding_period']: '{:.0f}'
+                }))
             else:
                 st.info(texts['no_completed_trades'])
         else:
