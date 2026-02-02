@@ -27,6 +27,7 @@ LANGUAGES = {
         'capital_label': 'ทุนเริ่มต้น',
         'strategy_label': 'กลยุทธ์การเทรด',
         'super_trend': 'SuperTrend',
+        'buy_and_hold': 'ถือยาว (Buy and Hold)',
         'ema_settings': 'การตั้งค่า EMA',
         'rsi_settings': 'การตั้งค่า RSI',
         'position_size': 'ขนาดตำแหน่ง',
@@ -85,6 +86,7 @@ LANGUAGES = {
         'capital_label': 'Initial Capital',
         'strategy_label': 'Trading Strategy',
         'super_trend': 'SuperTrend',
+        'buy_and_hold': 'Buy and Hold',
         'ema_settings': 'EMA Settings',
         'rsi_settings': 'RSI Settings',
         'position_size': 'Position Size',
@@ -143,6 +145,7 @@ LANGUAGES = {
         'capital_label': '初始资本',
         'strategy_label': '交易策略',
         'super_trend': 'SuperTrend',
+        'buy_and_hold': '买入并持有',
         'ema_settings': 'EMA设置',
         'rsi_settings': 'RSI设置',
         'position_size': '仓位大小',
@@ -349,6 +352,15 @@ class MultiCurrencyBacktester:
                     # Sell when RSI is above threshold (using closing prices for indicator)
                     elif prev_row['RSI'] >= rsi_sell_threshold and current_row['RSI'] < rsi_sell_threshold:
                         sell_signal = True
+            
+            elif strategy_type == "Buy and Hold":
+                # Buy and Hold strategy - Buy on first day, sell on last day
+                # Buy on the first available day
+                if i == max(ema_slow_window, rsi_window):  # First day where we have data for all indicators
+                    buy_signal = True
+                # Sell on the last day
+                elif i == len(self.data) - 1:
+                    sell_signal = True
             
             elif strategy_type == "SuperTrend":
                 # SuperTrend strategy - Buy when price closes above SuperTrend, Sell when below
@@ -686,7 +698,8 @@ def main():
         texts['strategy_label'],
         options=[
             "EMA Crossover",
-            "SuperTrend"
+            "SuperTrend",
+            "Buy and Hold"
         ],
         index=0
     )
