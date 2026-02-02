@@ -484,7 +484,8 @@ class MultiCurrencyBacktester:
         return buy_signals, sell_signals
 
     def run_backtest_by_strategy(self, strategy_type, position_size_pct=0.1, stop_loss_pct=None, take_profit_pct=None, 
-                                rsi_buy_threshold=30, rsi_sell_threshold=70, ema_fast_window=12, ema_slow_window=26):
+                                rsi_buy_threshold=30, rsi_sell_threshold=70, ema_fast_window=12, ema_slow_window=26,
+                                cdc_atr_multiplier=1.5, cdc_pivot_lookback=5):
         """Run backtest with predefined strategy using closing prices for indicators and opening prices for transactions"""
         cash = self.initial_capital
         shares = 0
@@ -495,7 +496,8 @@ class MultiCurrencyBacktester:
         
         # Generate signals based on strategy (using closing prices for indicators)
         buy_signals, sell_signals = self.generate_signals_by_strategy(
-            strategy_type, ema_slow_window=ema_slow_window, rsi_buy_threshold=rsi_buy_threshold, rsi_sell_threshold=rsi_sell_threshold
+            strategy_type, ema_slow_window=ema_slow_window, rsi_buy_threshold=rsi_buy_threshold, rsi_sell_threshold=rsi_sell_threshold,
+            cdc_atr_multiplier=cdc_atr_multiplier, cdc_pivot_lookback=cdc_pivot_lookback
         )
         
         for i, (date, row) in enumerate(self.data.iterrows()):
@@ -865,7 +867,9 @@ def main():
                         rsi_buy_threshold,
                         rsi_sell_threshold,
                         ema_fast,
-                        ema_slow
+                        ema_slow,
+                        cdc_atr_multiplier,
+                        cdc_pivot_lookback
                     )
 
                     st.session_state.backtester = backtester
