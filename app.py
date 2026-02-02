@@ -31,7 +31,7 @@ def calculate_atr(data, window=14):
     atr = true_range.rolling(window=window).mean()
     return atr
 
-class SimpleBacktester:
+class DebugBacktester:
     def __init__(self, symbol, start_date, end_date, initial_capital=10000):
         self.symbol = symbol
         self.start_date = start_date
@@ -61,7 +61,8 @@ class SimpleBacktester:
         buy_signals = []
         sell_signals = []
         
-        for i in range(1, len(self.data)):  # Start from 1 to compare with previous
+        # Ensure we have enough data points
+        for i in range(max(ema_slow_window, rsi_window), len(self.data)):
             current_row = self.data.iloc[i]
             prev_row = self.data.iloc[i-1]
             
@@ -77,39 +78,43 @@ class SimpleBacktester:
                     sell_signal = True
             
             elif strategy_type == "RSI Oversold/Oversold":
-                # Buy when RSI is below threshold (oversold)
-                if prev_row['RSI'] <= rsi_buy_threshold < current_row['RSI']:
-                    buy_signal = True
-                # Sell when RSI is above threshold (overbought)
-                elif prev_row['RSI'] >= rsi_sell_threshold > current_row['RSI']:
-                    sell_signal = True
+                # Buy when RSI crosses from below threshold to above (becomes less oversold)
+                if not pd.isna(prev_row['RSI']) and not pd.isna(current_row['RSI']):
+                    if prev_row['RSI'] <= rsi_buy_threshold < current_row['RSI']:
+                        buy_signal = True
+                    # Sell when RSI crosses from above threshold to below (becomes more overbought)
+                    elif prev_row['RSI'] >= rsi_sell_threshold > current_row['RSI']:
+                        sell_signal = True
             
             elif strategy_type == "Combined":
                 # Combined strategy using both EMA and RSI
-                ema_cross_up = (prev_row['EMA_Fast'] <= prev_row['EMA_Slow']) and (current_row['EMA_Fast'] > current_row['EMA_Slow'])
-                rsi_oversold = prev_row['RSI'] <= rsi_buy_threshold < current_row['RSI']
+                # Buy when EMA bullish AND RSI bullish
+                ema_bullish = (prev_row['EMA_Fast'] <= prev_row['EMA_Slow']) and (current_row['EMA_Fast'] > current_row['EMA_Slow'])
+                rsi_bullish = not pd.isna(prev_row['RSI']) and not pd.isna(current_row['RSI']) and \
+                              prev_row['RSI'] <= rsi_buy_threshold < current_row['RSI']
                 
-                ema_cross_down = (prev_row['EMA_Fast'] >= prev_row['EMA_Slow']) and (current_row['EMA_Fast'] < current_row['EMA_Slow'])
-                rsi_overbought = prev_row['RSI'] >= rsi_sell_threshold > current_row['RSI']
+                # Sell when EMA bearish AND RSI bearish
+                ema_bearish = (prev_row['EMA_Fast'] >= prev_row['EMA_Slow']) and (current_row['EMA_Fast'] < current_row['EMA_Slow'])
+                rsi_bearish = not pd.isna(prev_row['RSI']) and not pd.isna(current_row['RSI']) and \
+                              prev_row['RSI'] >= rsi_sell_threshold > current_row['RSI']
                 
-                # Buy when both EMA and RSI signals align for buying
-                if ema_cross_up and rsi_oversold:
+                if ema_bullish and rsi_bullish:
                     buy_signal = True
-                # Sell when both EMA and RSI signals align for selling
-                elif ema_cross_down and rsi_overbought:
+                elif ema_bearish and rsi_bearish:
                     sell_signal = True
             
             buy_signals.append(buy_signal)
             sell_signals.append(sell_signal)
         
-        # Add False for the first element since we don't have previous data
-        buy_signals.insert(0, False)
-        sell_signals.insert(0, False)
+        # Fill with False for initial data points where we can't calculate signals
+        for _ in range(len(self.data) - len(buy_signals)):
+            buy_signals.insert(0, False)
+            sell_signals.insert(0, False)
         
         return buy_signals, sell_signals
 
     def run_backtest_by_strategy(self, strategy_type, position_size_pct=0.1, stop_loss_pct=None, take_profit_pct=None, 
-                                rsi_buy_threshold=30, rsi_sell_threshold=70):
+                                rsi_buy_threshold=30, rsi_sell_threshold=70, ema_fast_window=12, ema_slow_window=26):
         """Run backtest with predefined strategy"""
         cash = self.initial_capital
         shares = 0
@@ -123,11 +128,19 @@ class SimpleBacktester:
             strategy_type, rsi_buy_threshold, rsi_sell_threshold
         )
         
+        # Track signals for debugging
+        debug_signals = []
+        
         for i, (date, row) in enumerate(self.data.iterrows()):
             current_price = row['Close']
             
-            should_buy = buy_signals[i] and not in_position and cash > 0
-            should_sell = sell_signals[i] and in_position and shares > 0
+            # Check if we have valid signals for this day
+            if i < len(buy_signals):
+                should_buy = buy_signals[i] and not in_position and cash > 0
+                should_sell = sell_signals[i] and in_position and shares > 0
+            else:
+                should_buy = False
+                should_sell = False
             
             # Apply stop loss and take profit if in position
             if in_position:
@@ -160,11 +173,16 @@ class SimpleBacktester:
                         'amount': cost,
                         'portfolio_value': cash + shares * current_price
                     })
+                    
+                    debug_signals.append(f"BUY at {current_price} on {date}")
             
             # Execute sell
             elif should_sell:
                 sale_amount = shares * current_price
                 cash += sale_amount
+                
+                profit = sale_amount - (shares * entry_price)
+                profit_pct = ((current_price - entry_price) / entry_price) * 100
                 
                 self.trades.append({
                     'type': 'SELL',
@@ -173,10 +191,12 @@ class SimpleBacktester:
                     'shares': shares,
                     'amount': sale_amount,
                     'portfolio_value': cash,
-                    'profit': sale_amount - (shares * entry_price),
-                    'profit_pct': ((current_price - entry_price) / entry_price) * 100,
-                    'holding_period': (date - trade_start_date).days
+                    'profit': profit,
+                    'profit_pct': profit_pct,
+                    'holding_period': (date - trade_start_date).days if trade_start_date else 0
                 })
+                
+                debug_signals.append(f"SELL at {current_price} on {date}, Profit: ${profit:.2f} ({profit_pct:.2f}%)")
                 
                 in_position = False
                 shares = 0
@@ -186,13 +206,13 @@ class SimpleBacktester:
             portfolio_values.append(portfolio_value)
         
         self.data['Portfolio_Value'] = portfolio_values
-        return self.trades
+        return self.trades, debug_signals
 
 def main():
-    st.set_page_config(page_title="Simple Investment Backtester", layout="wide")
-    st.title("📈 Simple Investment Backtesting Platform")
+    st.set_page_config(page_title="Debug Investment Backtester", layout="wide")
+    st.title("📈 Debug Investment Backtesting Platform")
     st.markdown("""
-    Simple backtesting with EMA and RSI strategies.
+    Debugging backtesting with EMA and RSI strategies.
     """)
     
     # Define symbol groups
@@ -301,12 +321,14 @@ def main():
         st.session_state.backtester = None
     if 'trades' not in st.session_state:
         st.session_state.trades = None
+    if 'debug_signals' not in st.session_state:
+        st.session_state.debug_signals = None
 
     # Run backtest button
     if st.sidebar.button("Run Backtest"):
         with st.spinner("Running backtest (this may take a moment due to API rate limits)..."):
             try:
-                backtester = SimpleBacktester(symbol, start_date, end_date, initial_capital)
+                backtester = DebugBacktester(symbol, start_date, end_date, initial_capital)
                 
                 if backtester.load_data_with_delay():
                     backtester.add_indicators(ema_fast, ema_slow, 14)
@@ -315,18 +337,22 @@ def main():
                     sl_pct = stop_loss if stop_loss > 0 else None
                     tp_pct = take_profit if take_profit > 0 else None
                     
-                    trades = backtester.run_backtest_by_strategy(
+                    trades, debug_signals = backtester.run_backtest_by_strategy(
                         strategy_type,
                         position_size,
                         sl_pct,
                         tp_pct,
                         rsi_buy_threshold,
-                        rsi_sell_threshold
+                        rsi_sell_threshold,
+                        ema_fast,
+                        ema_slow
                     )
                     
                     st.session_state.backtester = backtester
                     st.session_state.trades = trades
+                    st.session_state.debug_signals = debug_signals
                     st.success("Backtest completed successfully!")
+                    st.info(f"Generated {len(debug_signals)} trading signals")
                 else:
                     st.error("Failed to load data for the given symbol and date range")
             except Exception as e:
@@ -336,6 +362,7 @@ def main():
     if st.session_state.backtester and st.session_state.backtester.data is not None:
         data = st.session_state.backtester.data
         trades = st.session_state.trades
+        debug_signals = st.session_state.debug_signals
         
         # Display data summary
         col1, col2, col3, col4 = st.columns(4)
@@ -375,12 +402,12 @@ def main():
         
         # Add buy/sell markers
         if trades:
-            buy_dates = [t['date'] for t in trades if t['type'] == 'BUY']
-            buy_prices = [data.loc[t['date']]['Close'] if t['date'] in data.index else None for t in trades if t['type'] == 'BUY']
-            sell_dates = [t['date'] for t in trades if t['type'] == 'SELL']
-            sell_prices = [data.loc[t['date']]['Close'] if t['date'] in data.index else None for t in trades if t['type'] == 'SELL']
+            buy_trades = [t for t in trades if t['type'] == 'BUY']
+            sell_trades = [t for t in trades if t['type'] == 'SELL']
             
-            if buy_dates:
+            if buy_trades:
+                buy_dates = [t['date'] for t in buy_trades]
+                buy_prices = [t['price'] for t in buy_trades]
                 fig.add_trace(go.Scatter(
                     x=buy_dates, 
                     y=buy_prices, 
@@ -389,7 +416,9 @@ def main():
                     marker=dict(color='green', size=10, symbol='triangle-up')
                 ), row=1, col=1)
             
-            if sell_dates:
+            if sell_trades:
+                sell_dates = [t['date'] for t in sell_trades]
+                sell_prices = [t['price'] for t in sell_trades]
                 fig.add_trace(go.Scatter(
                     x=sell_dates, 
                     y=sell_prices, 
@@ -410,6 +439,14 @@ def main():
         
         fig.update_layout(height=900, showlegend=True)
         st.plotly_chart(fig, use_container_width=True)
+        
+        # Debug signals
+        if debug_signals:
+            st.subheader("Debug Signals")
+            for signal in debug_signals[:20]:  # Show first 20 signals
+                st.write(signal)
+            if len(debug_signals) > 20:
+                st.write(f"... and {len(debug_signals) - 20} more signals")
         
         # Trading results
         if trades:
