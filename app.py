@@ -31,7 +31,7 @@ def calculate_atr(data, window=14):
     atr = true_range.rolling(window=window).mean()
     return atr
 
-class FinalBacktester:
+class BahtBacktester:
     def __init__(self, symbol, start_date, end_date, initial_capital=10000):
         self.symbol = symbol
         self.start_date = start_date
@@ -204,21 +204,24 @@ class FinalBacktester:
         return self.trades
 
 def main():
-    st.set_page_config(page_title="Final Investment Backtester", layout="wide")
-    st.title("📈 Final Investment Backtesting Platform")
+    st.set_page_config(page_title="Investment Backtester (Baht)", layout="wide")
+    st.title("📈 ระบบย้อนกลับการลงทุน (หน่วยเงินบาท)")
     st.markdown("""
-    Final backtesting with EMA and RSI strategies using closing prices for indicators and opening prices for transactions.
+    ระบบย้อนกลับการลงทุนที่ใช้หน่วยเงินบาทไทย โดยใช้กลยุทธ์ EMA และ RSI ที่คำนวณจากราคาปิดและดำเนินการซื้อขายที่ราคาเปิด
     """)
+
+    # Currency conversion helper (assuming 1 USD = 30 THB)
+    USD_TO_THB = 30
     
-    # Define symbol groups
+    # Define symbol groups with Thai equivalents where possible
     symbol_groups = {
-        "Indices": [
+        "ดัชนี": [
             ("^GSPC", "S&P 500"),
-            ("^STI", "SET Index"),
-            ("^SET50", "SET 50"),
-            ("^SET100", "SET 100")
+            ("^STI", "ดัชนี SET"),
+            ("^SET50", "ดัชนี SET 50"),
+            ("^SET100", "ดัชนี SET 100")
         ],
-        "US Stocks": [
+        "หุ้น US": [
             ("AAPL", "Apple"),
             ("NVDA", "NVIDIA"),
             ("MSFT", "Microsoft"),
@@ -226,25 +229,25 @@ def main():
             ("AMZN", "Amazon"),
             ("TSLA", "Tesla")
         ],
-        "International Stocks": [
+        "หุ้นต่างประเทศ": [
             ("01810.HK", "Xiaomi"),
             ("2330.TW", "TSMC"),
             ("BMW.DE", "BMW"),
             ("NOKIA.HE", "Nokia")
         ],
-        "Thai Stocks": [
+        "หุ้นไทย": [
             ("PTT.BK", "PTT"),
-            ("SCC.BK", "Siam Cement"),
+            ("SCC.BK", "ซีเมนต์ไทย"),
             ("CPALL.BK", "CP ALL"),
-            ("KBANK.BK", "Kasikornbank"),
-            ("TRUE.BK", "TRUE Corporation")
+            ("KBANK.BK", "ธนาคารกสิกรไทย"),
+            ("TRUE.BK", "TRUE")
         ],
-        "Commodities & Crypto": [
-            ("GC=F", "Gold"),
-            ("CL=F", "Crude Oil"),
+        "สินทรัพย์อื่นๆ": [
+            ("GC=F", "ทองคำ"),
+            ("CL=F", "น้ำมันดิบ"),
             ("BTC-USD", "Bitcoin"),
             ("ETH-USD", "Ethereum"),
-            ("XAU=", "Gold Spot")
+            ("XAU=", "ทองคำ SPOT")
         ]
     }
     
@@ -255,11 +258,11 @@ def main():
             all_symbols[f"{name} ({symbol})"] = symbol
     
     # Sidebar for inputs
-    st.sidebar.header("Backtest Settings")
+    st.sidebar.header("การตั้งค่าการย้อนกลับ")
     
     # Symbol selection with dropdown
     symbol_option = st.sidebar.selectbox(
-        "Stock/Symbol",
+        "สัญลักษณ์หุ้น/สินทรัพย์",
         options=list(all_symbols.keys()),
         format_func=lambda x: x
     )
@@ -268,22 +271,23 @@ def main():
     # Date range with new defaults
     col1, col2 = st.sidebar.columns(2)
     # Default start date to 2017/01/01
-    start_date = col1.date_input("Start Date", value=datetime(2017, 1, 1))
+    start_date = col1.date_input("วันเริ่มต้น", value=datetime(2017, 1, 1))
     # Default end date to last business day before today
     last_business_day = datetime.now() - timedelta(days=1)
     if last_business_day.weekday() >= 5:  # Weekend
         # Go back to Friday
         days_back = last_business_day.weekday() - 4
         last_business_day = last_business_day - timedelta(days=days_back)
-    end_date = col2.date_input("End Date", value=last_business_day.date())
+    end_date = col2.date_input("วันสิ้นสุด", value=last_business_day.date())
     
-    # Initial capital
-    initial_capital = st.sidebar.number_input("Initial Capital ($)", value=10000, min_value=100, step=100)
+    # Initial capital (converted to THB)
+    initial_capital_usd = st.sidebar.number_input("ทุนเริ่มต้น ($)", value=10000, min_value=100, step=100)
+    initial_capital_thb = initial_capital_usd * USD_TO_THB
     
     # Strategy selection
-    st.sidebar.subheader("Trading Strategy")
+    st.sidebar.subheader("กลยุทธ์การเทรด")
     strategy_type = st.sidebar.selectbox(
-        "Choose Strategy Type",
+        "เลือกประเภทกลยุทธ์",
         options=[
             "EMA Crossover",
             "RSI Oversold/Oversold",
@@ -294,29 +298,29 @@ def main():
     
     # Show indicators based on selected strategy
     if strategy_type in ["EMA Crossover", "Combined"]:
-        st.sidebar.subheader("EMA Settings")
-        ema_fast = st.sidebar.slider("Fast EMA Window", 5, 50, 12)
-        ema_slow = st.sidebar.slider("Slow EMA Window", 5, 50, 26)
+        st.sidebar.subheader("การตั้งค่า EMA")
+        ema_fast = st.sidebar.slider("หน้าต่าง EMA เร็ว", 5, 50, 12)
+        ema_slow = st.sidebar.slider("หน้าต่าง EMA ช้า", 5, 50, 26)
     else:
         ema_fast = 12  # Default values
         ema_slow = 26
     
     if strategy_type in ["RSI Oversold/Oversold", "Combined"]:
-        st.sidebar.subheader("RSI Settings")
-        rsi_buy_threshold = st.sidebar.slider("RSI Buy Threshold", 10, 50, 30)
-        rsi_sell_threshold = st.sidebar.slider("RSI Sell Threshold", 50, 90, 70)
+        st.sidebar.subheader("การตั้งค่า RSI")
+        rsi_buy_threshold = st.sidebar.slider("เกณฑ์ซื้อ RSI", 10, 50, 30)
+        rsi_sell_threshold = st.sidebar.slider("เกณฑ์ขาย RSI", 50, 90, 70)
     else:
         rsi_buy_threshold = 30  # Default values
         rsi_sell_threshold = 70
     
     # Position sizing
-    st.sidebar.subheader("Position Sizing")
-    position_size = st.sidebar.slider("Position Size (%)", 1, 100, 10) / 100
+    st.sidebar.subheader("ขนาดตำแหน่ง")
+    position_size = st.sidebar.slider("ขนาดตำแหน่ง (%)", 1, 100, 10) / 100
     
     # Risk management
-    st.sidebar.subheader("Risk Management")
-    stop_loss = st.sidebar.slider("Stop Loss (%)", 0, 20, 0)  # 0 means disabled
-    take_profit = st.sidebar.slider("Take Profit (%)", 0, 30, 0)  # 0 means disabled
+    st.sidebar.subheader("การจัดการความเสี่ยง")
+    stop_loss = st.sidebar.slider("หยุดขาดทุน (%)", 0, 20, 0)  # 0 means disabled
+    take_profit = st.sidebar.slider("ทำกำไร (%)", 0, 30, 0)  # 0 means disabled
     
     # Initialize session state
     if 'backtester' not in st.session_state:
@@ -325,10 +329,10 @@ def main():
         st.session_state.trades = None
 
     # Run backtest button
-    if st.sidebar.button("Run Backtest"):
-        with st.spinner("Running backtest (this may take a moment due to API rate limits)..."):
+    if st.sidebar.button("เริ่มการย้อนกลับ"):
+        with st.spinner("กำลังดำเนินการย้อนกลับ (อาจใช้เวลาสักครู่เนื่องจากมีการจำกัดความถี่ของ API)..."):
             try:
-                backtester = FinalBacktester(symbol, start_date, end_date, initial_capital)
+                backtester = BahtBacktester(symbol, start_date, end_date, initial_capital_usd)
                 
                 if backtester.load_data_with_delay():
                     backtester.add_indicators(ema_fast, ema_slow, 14)
@@ -350,52 +354,53 @@ def main():
                     
                     st.session_state.backtester = backtester
                     st.session_state.trades = trades
-                    st.success("Backtest completed successfully!")
+                    st.success("การย้อนกลับเสร็จสมบูรณ์!")
                 else:
-                    st.error("Failed to load data for the given symbol and date range")
+                    st.error("ไม่สามารถโหลดข้อมูลสำหรับสัญลักษณ์และช่วงวันที่กำหนดได้")
             except Exception as e:
-                st.error(f"Error running backtest: {str(e)}")
+                st.error(f"เกิดข้อผิดพลาดในการย้อนกลับ: {str(e)}")
 
     # Main content
     if st.session_state.backtester and st.session_state.backtester.data is not None:
         data = st.session_state.backtester.data
         trades = st.session_state.trades
         
-        # Display data summary
+        # Display data summary in THB
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Symbol", symbol)
-        col2.metric("Initial Capital", f"${initial_capital:,}")
-        col3.metric("Start Date", start_date.strftime("%Y-%m-%d"))
-        col4.metric("End Date", end_date.strftime("%Y-%m-%d"))
+        col1.metric("สัญลักษณ์", symbol)
+        col2.metric("ทุนเริ่มต้น (THB)", f"฿{initial_capital_thb:,.2f}", 
+                   help=f"USD ${initial_capital_usd:,.2f} × {USD_TO_THB} THB/USD")
+        col3.metric("วันเริ่มต้น", start_date.strftime("%Y-%m-%d"))
+        col4.metric("วันสิ้นสุด", end_date.strftime("%Y-%m-%d"))
         col5, col6 = st.columns(2)
-        col5.metric("Strategy", strategy_type)
-        col6.metric("Position Size", f"{position_size*100:.0f}%")
+        col5.metric("กลยุทธ์", strategy_type)
+        col6.metric("ขนาดตำแหน่ง", f"{position_size*100:.0f}%")
         
         # Show strategy-specific parameters
         if strategy_type in ["EMA Crossover", "Combined"]:
             col7, col8 = st.columns(2)
-            col7.metric("Fast EMA", ema_fast)
-            col8.metric("Slow EMA", ema_slow)
+            col7.metric("EMA เร็ว", ema_fast)
+            col8.metric("EMA ช้า", ema_slow)
         
         if strategy_type in ["RSI Oversold/Oversold", "Combined"]:
             col9, col10 = st.columns(2)
-            col9.metric("RSI Buy", rsi_buy_threshold)
-            col10.metric("RSI Sell", rsi_sell_threshold)
+            col9.metric("RSI ซื้อ", rsi_buy_threshold)
+            col10.metric("RSI ขาย", rsi_sell_threshold)
         
         # Create charts
         fig = make_subplots(
             rows=3, cols=1, 
             shared_xaxes=True,
             vertical_spacing=0.08,
-            subplot_titles=(f'{symbol} Price & EMAs', 'RSI', 'Portfolio Value'),
+            subplot_titles=(f'{symbol} ราคา & EMAs', 'RSI', 'มูลค่าพอร์ต (THB)'),
             row_heights=[0.4, 0.3, 0.3]
         )
         
         # Price and EMAs
-        fig.add_trace(go.Scatter(x=data.index, y=data['Close'], name='Close', line=dict(color='black')), row=1, col=1)
+        fig.add_trace(go.Scatter(x=data.index, y=data['Close']*USD_TO_THB, name='ปิด (THB)', line=dict(color='black')), row=1, col=1)
         if strategy_type in ["EMA Crossover", "Combined"]:
-            fig.add_trace(go.Scatter(x=data.index, y=data['EMA_Fast'], name=f'EMA{ema_fast}', line=dict(color='orange')), row=1, col=1)
-            fig.add_trace(go.Scatter(x=data.index, y=data['EMA_Slow'], name=f'EMA{ema_slow}', line=dict(color='blue')), row=1, col=1)
+            fig.add_trace(go.Scatter(x=data.index, y=data['EMA_Fast']*USD_TO_THB, name=f'EMA{ema_fast} (THB)', line=dict(color='orange')), row=1, col=1)
+            fig.add_trace(go.Scatter(x=data.index, y=data['EMA_Slow']*USD_TO_THB, name=f'EMA{ema_slow} (THB)', line=dict(color='blue')), row=1, col=1)
         
         # Add buy/sell markers
         if trades:
@@ -404,42 +409,42 @@ def main():
             
             if buy_trades:
                 buy_dates = [t['date'] for t in buy_trades]
-                buy_prices = [t['price'] for t in buy_trades]
+                buy_prices_thb = [t['price'] * USD_TO_THB for t in buy_trades]
                 fig.add_trace(go.Scatter(
                     x=buy_dates, 
-                    y=buy_prices, 
+                    y=buy_prices_thb, 
                     mode='markers', 
-                    name='Buy Signal', 
+                    name='สัญญาณซื้อ', 
                     marker=dict(color='green', size=10, symbol='triangle-up')
                 ), row=1, col=1)
             
             if sell_trades:
                 sell_dates = [t['date'] for t in sell_trades]
-                sell_prices = [t['price'] for t in sell_trades]
+                sell_prices_thb = [t['price'] * USD_TO_THB for t in sell_trades]
                 fig.add_trace(go.Scatter(
                     x=sell_dates, 
-                    y=sell_prices, 
+                    y=sell_prices_thb, 
                     mode='markers', 
-                    name='Sell Signal', 
+                    name='สัญญาณขาย', 
                     marker=dict(color='red', size=10, symbol='triangle-down')
                 ), row=1, col=1)
         
         # RSI
         if strategy_type in ["RSI Oversold/Oversold", "Combined"]:
             fig.add_trace(go.Scatter(x=data.index, y=data['RSI'], name='RSI', line=dict(color='purple')), row=2, col=1)
-            fig.add_hline(y=rsi_sell_threshold, line_dash="dash", line_color="red", row=2, col=1, annotation_text="Sell Level")
-            fig.add_hline(y=rsi_buy_threshold, line_dash="dash", line_color="green", row=2, col=1, annotation_text="Buy Level")
+            fig.add_hline(y=rsi_sell_threshold, line_dash="dash", line_color="red", row=2, col=1, annotation_text="ระดับขาย")
+            fig.add_hline(y=rsi_buy_threshold, line_dash="dash", line_color="green", row=2, col=1, annotation_text="ระดับซื้อ")
         
-        # Portfolio value
+        # Portfolio value in THB
         if 'Portfolio_Value' in data.columns:
-            fig.add_trace(go.Scatter(x=data.index, y=data['Portfolio_Value'], name='Portfolio Value', line=dict(color='blue')), row=3, col=1)
+            fig.add_trace(go.Scatter(x=data.index, y=data['Portfolio_Value']*USD_TO_THB, name='มูลค่าพอร์ต (THB)', line=dict(color='blue')), row=3, col=1)
         
         fig.update_layout(height=900, showlegend=True)
         st.plotly_chart(fig, use_container_width=True)
         
-        # Trading results
+        # Trading results in THB
         if trades:
-            st.subheader("Trading Results")
+            st.subheader("ผลลัพธ์การเทรด")
             
             # Count buy and sell trades
             buy_trades = [t for t in trades if t['type'] == 'BUY']
@@ -452,18 +457,20 @@ def main():
             
             win_rate = winning_trades / total_trades * 100 if total_trades > 0 else 0
             
-            # Final portfolio value
-            final_value = data['Portfolio_Value'].iloc[-1] if 'Portfolio_Value' in data.columns else initial_capital
-            total_return = (final_value - initial_capital) / initial_capital * 100
+            # Final portfolio value in THB
+            final_value_usd = data['Portfolio_Value'].iloc[-1] if 'Portfolio_Value' in data.columns else initial_capital_usd
+            final_value_thb = final_value_usd * USD_TO_THB
+            total_return = (final_value_usd - initial_capital_usd) / initial_capital_usd * 100
             
             col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Total Trades", total_trades)
-            col2.metric("Win Rate", f"{win_rate:.2f}%")
-            col3.metric("Final Value", f"${final_value:,.2f}")
-            col4.metric("Total Return", f"{total_return:.2f}%")
+            col1.metric("จำนวนเทรดทั้งหมด", total_trades)
+            col2.metric("อัตราชนะ", f"{win_rate:.2f}%")
+            col3.metric("มูลค่าสุดท้าย (THB)", f"฿{final_value_thb:,.2f}",
+                       help=f"USD ${final_value_usd:,.2f} × {USD_TO_THB} THB/USD")
+            col4.metric("ผลตอบแทนรวม", f"{total_return:.2f}%")
             
             # Detailed trade log - show pairs of buy/sell transactions
-            st.subheader("Trade Log (Buy/Sell Pairs)")
+            st.subheader("บันทึกการเทรด (คู่ซื้อ/ขาย)")
             if sell_trades:
                 # Pair up buy and sell transactions
                 trade_pairs = []
@@ -476,10 +483,13 @@ def main():
                         trade_pairs.append({
                             'buy_date': current_buy['date'],
                             'buy_price': current_buy['price'],
+                            'buy_price_thb': current_buy['price'] * USD_TO_THB,
                             'sell_date': current_sell['date'],
                             'sell_price': current_sell['price'],
+                            'sell_price_thb': current_sell['price'] * USD_TO_THB,
                             'shares': current_buy['shares'],
-                            'profit': current_sell['profit'],
+                            'profit_usd': current_sell['profit'],
+                            'profit_thb': current_sell['profit'] * USD_TO_THB,
                             'profit_pct': current_sell['profit_pct'],
                             'holding_period': current_sell['holding_period']
                         })
@@ -493,32 +503,33 @@ def main():
                 if trade_pairs:
                     trade_pairs_df = pd.DataFrame(trade_pairs)
                     trade_pairs_df = trade_pairs_df.rename(columns={
-                        'buy_date': 'Buy Date',
-                        'buy_price': 'Buy Price',
-                        'sell_date': 'Sell Date',
-                        'sell_price': 'Sell Price',
-                        'shares': 'Shares',
-                        'profit': 'Profit',
-                        'profit_pct': 'Profit %',
-                        'holding_period': 'Hold Days'
+                        'buy_date': 'วันที่ซื้อ',
+                        'buy_price_thb': 'ราคาซื้อ (THB)',
+                        'sell_date': 'วันที่ขาย',
+                        'sell_price_thb': 'ราคาขาย (THB)',
+                        'shares': 'จำนวนหุ้น',
+                        'profit_thb': 'กำไร (THB)',
+                        'profit_pct': 'กำไร %',
+                        'holding_period': 'ถือครอง (วัน)'
                     })
                     
-                    st.dataframe(trade_pairs_df.style.format({
-                        'Buy Price': '${:.2f}',
-                        'Sell Price': '${:.2f}',
-                        'Profit': '${:.2f}',
-                        'Profit %': '{:.2f}%',
-                        'Hold Days': '{:.0f}'
+                    # Format the DataFrame to show THB amounts
+                    st.dataframe(trade_pairs_df[['วันที่ซื้อ', 'ราคาซื้อ (THB)', 'วันที่ขาย', 'ราคาขาย (THB)', 'จำนวนหุ้น', 'กำไร (THB)', 'กำไร %', 'ถือครอง (วัน)']].style.format({
+                        'ราคาซื้อ (THB)': '฿{:,.2f}',
+                        'ราคาขาย (THB)': '฿{:,.2f}',
+                        'กำไร (THB)': '฿{:,.2f}',
+                        'กำไร %': '{:.2f}%',
+                        'ถือครอง (วัน)': '{:.0f}'
                     }))
                 else:
-                    st.info("No paired buy/sell transactions to display")
+                    st.info("ไม่มีคู่ซื้อ/ขายที่แสดง")
             else:
-                st.info("No completed trades (buy + sell) to display")
+                st.info("ไม่มีการเทรดที่เสร็จสมบูรณ์ (ซื้อ + ขาย)")
         else:
-            st.info("Run backtest to see results")
+            st.info("เริ่มการย้อนกลับเพื่อดูผลลัพธ์")
     
     else:
-        st.info("Enter parameters and click 'Run Backtest' to start")
+        st.info("ป้อนพารามิเตอร์และคลิก 'เริ่มการย้อนกลับ' เพื่อเริ่มต้น")
 
 if __name__ == "__main__":
     main()
