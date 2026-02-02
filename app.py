@@ -270,10 +270,10 @@ class MultiCurrencyBacktester:
             elif strategy_type == "RSI Oversold/Oversold":
                 # Buy when RSI is below threshold (using closing prices for indicator)
                 if not pd.isna(prev_row['RSI']) and not pd.isna(current_row['RSI']):
-                    if prev_row['RSI'] <= rsi_buy_threshold < current_row['RSI']:
+                    if prev_row['RSI'] <= rsi_buy_threshold and current_row['RSI'] > rsi_buy_threshold:
                         buy_signal = True
                     # Sell when RSI is above threshold (using closing prices for indicator)
-                    elif prev_row['RSI'] >= rsi_sell_threshold > current_row['RSI']:
+                    elif prev_row['RSI'] >= rsi_sell_threshold and current_row['RSI'] < rsi_sell_threshold:
                         sell_signal = True
             
             elif strategy_type == "Combined":
@@ -281,12 +281,12 @@ class MultiCurrencyBacktester:
                 # Buy when EMA bullish AND RSI bullish
                 ema_bullish = (prev_row['EMA_Fast'] <= prev_row['EMA_Slow']) and (current_row['EMA_Fast'] > current_row['EMA_Slow'])
                 rsi_bullish = not pd.isna(prev_row['RSI']) and not pd.isna(current_row['RSI']) and \
-                              prev_row['RSI'] <= rsi_buy_threshold < current_row['RSI']
+                              prev_row['RSI'] <= rsi_buy_threshold and current_row['RSI'] > rsi_buy_threshold
                 
                 # Sell when EMA bearish AND RSI bearish
                 ema_bearish = (prev_row['EMA_Fast'] >= prev_row['EMA_Slow']) and (current_row['EMA_Fast'] < current_row['EMA_Slow'])
                 rsi_bearish = not pd.isna(prev_row['RSI']) and not pd.isna(current_row['RSI']) and \
-                              prev_row['RSI'] >= rsi_sell_threshold > current_row['RSI']
+                              prev_row['RSI'] >= rsi_sell_threshold and current_row['RSI'] < rsi_sell_threshold
                 
                 if ema_bullish and rsi_bullish:
                     buy_signal = True
