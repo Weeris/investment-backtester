@@ -276,6 +276,68 @@ def calculate_supertrend(data, atr_multiplier=3, atr_window=10):
     
     return df['SuperTrend']
 
+def calculate_chaloke_cdc(data, atr_multiplier=1.5, pivot_lookback=5):
+    """
+    Calculate ChalokeDotCom CDC indicator
+    Based on Chaloke's methodology for Thai stock market analysis
+    """
+    df = data.copy()
+    
+    # Calculate ATR for volatility adjustment
+    atr = calculate_atr(df, window=14)
+    
+    # Calculate pivot points for support/resistance levels
+    df['High_Last_N'] = df['High'].rolling(window=pivot_lookback).max()
+    df['Low_Last_N'] = df['Low'].rolling(window=pivot_lookback).min()
+    
+    # Calculate CDC trend lines
+    df['CDC_Middle_Line'] = (df['High_Last_N'] + df['Low_Last_N']) / 2
+    
+    # Calculate support and resistance levels with ATR adjustment
+    df['CDC_Support'] = df['Low_Last_N'] - (atr * atr_multiplier)
+    df['CDC_Resistance'] = df['High_Last_N'] + (atr * atr_multiplier)
+    
+    # Calculate bullish and bearish signal conditions
+    df['Price_Above_Middle'] = df['Close'] > df['CDC_Middle_Line']
+    df['Price_Below_Middle'] = df['Close'] < df['CDC_Middle_Line']
+    
+    # Previous conditions for crossover detection
+    df['Prev_Above_Middle'] = df['Price_Above_Middle'].shift(1)
+    df['Prev_Below_Middle'] = df['Price_Below_Middle'].shift(1)
+    
+    # Bullish signal: price crosses above middle line
+    df['CDC_Bullish_Signal'] = (df['Prev_Below_Middle']) & (df['Price_Above_Middle'])
+    
+    # Bearish signal: price crosses below middle line
+    df['CDC_Bearish_Signal'] = (df['Prev_Above_Middle']) & (df['Price_Below_Middle'])
+    
+    # Calculate signal strength based on distance from middle line and ATR
+    df['Distance_From_Middle'] = abs(df['Close'] - df['CDC_Middle_Line'])
+    df['Signal_Strength'] = df['Distance_From_Middle'] / atr
+    
+    # Normalize signal strength
+    df['CDC_Signal_Strength'] = np.where(
+        df['CDC_Bullish_Signal'] | df['CDC_Bearish_Signal'],
+        np.minimum(df['Signal_Strength'], 2.0),  # Cap at 2.0 for normalization
+        0
+    )
+    
+    # Determine overall trend
+    df['CDC_Trend'] = np.where(
+        df['Close'] > df['CDC_Middle_Line'],
+        'Bullish',
+        np.where(df['Close'] < df['CDC_Middle_Line'], 'Bearish', 'Neutral')
+    )
+    
+    return (
+        df['CDC_Bullish_Signal'],
+        df['CDC_Bearish_Signal'],
+        df['CDC_Trend'],
+        df['CDC_Support'],
+        df['CDC_Resistance'],
+        df['CDC_Signal_Strength']
+    )
+
 class MultiCurrencyBacktester:
     def __init__(self, symbol, start_date, end_date, initial_capital=10000, currency='THB'):
         self.symbol = symbol
@@ -371,6 +433,22 @@ class MultiCurrencyBacktester:
                     # Sell when price moves below SuperTrend (downtrend)
                     elif prev_row["Close"] >= prev_row["SuperTrend"] and current_row["Close"] < current_row["SuperTrend"]:
                         sell_signal = True
+            
+            elif strategy_type == "Chaloke CDC":
+                # Chaloke CDC strategy - Buy when bullish signal appears, Sell when bearish signal appears
+                # First, calculate CDC indicators for the current data
+                df_with_cdc = self.data.copy()
+                (bullish_signals, bearish_signals, cdc_trend, 
+                 support_levels, resistance_levels, signal_strength) = calculate_chaloke_cdc(df_with_cdc)
+                
+                # Get the current and previous CDC signals
+                current_bullish = bullish_signals.iloc[i] if i < len(bullish_signals) else False
+                current_bearish = bearish_signals.iloc[i] if i < len(bearish_signals) else False
+                
+                if current_bullish:
+                    buy_signal = True
+                elif current_bearish:
+                    sell_signal = True
 
             elif strategy_type == "Combined":
                 # Combined strategy using both EMA and RSI (using closing prices for indicators)
@@ -699,6 +777,7 @@ def main():
         options=[
             "EMA Crossover",
             "SuperTrend",
+            "Chaloke CDC",
             "Buy and Hold"
         ],
         index=0
@@ -709,9 +788,15 @@ def main():
         st.sidebar.subheader(texts['ema_settings'])
         ema_fast = st.sidebar.slider(texts['fast_ema'], 5, 50, 12)
         ema_slow = st.sidebar.slider(texts['slow_ema'], 5, 50, 26)
+    elif strategy_type in ["Chaloke CDC"]:
+        st.sidebar.subheader("CDC Settings")
+        cdc_atr_multiplier = st.sidebar.slider("ATR Multiplier", 0.5, 3.0, 1.5, 0.1)
+        cdc_pivot_lookback = st.sidebar.slider("Pivot Lookback", 2, 20, 5)
     else:
         ema_fast = 12  # Default values
         ema_slow = 26
+        cdc_atr_multiplier = 1.5  # Default CDC values
+        cdc_pivot_lookback = 5
 
     # RSI settings are only needed for RSI strategy (which was removed)
     if strategy_type in []:
@@ -748,7 +833,8 @@ def main():
 
                     # Generate signals to check if there are any
                     buy_signals, sell_signals = backtester.generate_signals_by_strategy(
-                        strategy_type, ema_slow_window=ema_slow, rsi_buy_threshold=rsi_buy_threshold, rsi_sell_threshold=rsi_sell_threshold
+                        strategy_type, ema_slow_window=ema_slow, rsi_buy_threshold=rsi_buy_threshold, rsi_sell_threshold=rsi_sell_threshold,
+                        cdc_atr_multiplier=cdc_atr_multiplier, cdc_pivot_lookback=cdc_pivot_lookback
                     )
 
                     # Count signals
