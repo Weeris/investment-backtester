@@ -22,23 +22,6 @@ def calculate_rsi(data, window=14):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-def calculate_macd(data, fast=12, slow=26, signal=9):
-    """Calculate MACD"""
-    exp1 = data.ewm(span=fast).mean()
-    exp2 = data.ewm(span=slow).mean()
-    macd = exp1 - exp2
-    signal_line = macd.ewm(span=signal).mean()
-    histogram = macd - signal_line
-    return macd, signal_line, histogram
-
-def calculate_bollinger_bands(data, window=20, num_std=2):
-    """Calculate Bollinger Bands"""
-    sma = data.rolling(window=window).mean()
-    std = data.rolling(window=window).std()
-    upper_band = sma + (std * num_std)
-    lower_band = sma - (std * num_std)
-    return upper_band, sma, lower_band
-
 def calculate_atr(data, window=14):
     """Calculate Average True Range for volatility"""
     high_low = data['High'] - data['Low']
@@ -48,7 +31,7 @@ def calculate_atr(data, window=14):
     atr = true_range.rolling(window=window).mean()
     return atr
 
-class AdvancedBacktester:
+class SimpleBacktester:
     def __init__(self, symbol, start_date, end_date, initial_capital=10000):
         self.symbol = symbol
         self.start_date = start_date
@@ -71,21 +54,9 @@ class AdvancedBacktester:
         self.data['EMA_Fast'] = calculate_ema(self.data['Close'], ema_fast_window)
         self.data['EMA_Slow'] = calculate_ema(self.data['Close'], ema_slow_window)
         self.data['RSI'] = calculate_rsi(self.data['Close'], rsi_window)
-        
-        # Additional indicators
-        macd, macd_signal, macd_hist = calculate_macd(self.data['Close'])
-        self.data['MACD'] = macd
-        self.data['MACD_Signal'] = macd_signal
-        self.data['MACD_Histogram'] = macd_hist
-        
-        bb_upper, bb_middle, bb_lower = calculate_bollinger_bands(self.data['Close'])
-        self.data['BB_Upper'] = bb_upper
-        self.data['BB_Middle'] = bb_middle
-        self.data['BB_Lower'] = bb_lower
-        
         self.data['ATR'] = calculate_atr(self.data, 14)
 
-    def generate_signals_by_strategy(self, strategy_type, rsi_buy_threshold=30, rsi_sell_threshold=70, bb_buy_threshold=20, bb_sell_threshold=80):
+    def generate_signals_by_strategy(self, strategy_type, rsi_buy_threshold=30, rsi_sell_threshold=70):
         """Generate buy/sell signals based on selected strategy"""
         buy_signals = []
         sell_signals = []
@@ -113,37 +84,19 @@ class AdvancedBacktester:
                 elif prev_row['RSI'] >= rsi_sell_threshold > current_row['RSI']:
                     sell_signal = True
             
-            elif strategy_type == "Bollinger Bands":
-                # Buy when price touches lower band
-                if (prev_row['Close'] > prev_row['BB_Lower']) and (current_row['Close'] <= current_row['BB_Lower']):
-                    buy_signal = True
-                # Sell when price touches upper band
-                elif (prev_row['Close'] < prev_row['BB_Upper']) and (current_row['Close'] >= current_row['BB_Upper']):
-                    sell_signal = True
-            
-            elif strategy_type == "MACD Crossover":
-                # Buy when MACD line crosses above signal line
-                if (prev_row['MACD'] <= prev_row['MACD_Signal']) and (current_row['MACD'] > current_row['MACD_Signal']):
-                    buy_signal = True
-                # Sell when MACD line crosses below signal line
-                elif (prev_row['MACD'] >= prev_row['MACD_Signal']) and (current_row['MACD'] < current_row['MACD_Signal']):
-                    sell_signal = True
-            
             elif strategy_type == "Combined":
-                # Combined strategy using multiple indicators
+                # Combined strategy using both EMA and RSI
                 ema_cross_up = (prev_row['EMA_Fast'] <= prev_row['EMA_Slow']) and (current_row['EMA_Fast'] > current_row['EMA_Slow'])
                 rsi_oversold = prev_row['RSI'] <= rsi_buy_threshold < current_row['RSI']
-                bb_touch_lower = (prev_row['Close'] > prev_row['BB_Lower']) and (current_row['Close'] <= current_row['BB_Lower'])
                 
                 ema_cross_down = (prev_row['EMA_Fast'] >= prev_row['EMA_Slow']) and (current_row['EMA_Fast'] < current_row['EMA_Slow'])
                 rsi_overbought = prev_row['RSI'] >= rsi_sell_threshold > current_row['RSI']
-                bb_touch_upper = (prev_row['Close'] < prev_row['BB_Upper']) and (current_row['Close'] >= current_row['BB_Upper'])
                 
-                # Buy when multiple indicators align
-                if (ema_cross_up or rsi_oversold or bb_touch_lower):
+                # Buy when both EMA and RSI signals align for buying
+                if ema_cross_up and rsi_oversold:
                     buy_signal = True
-                # Sell when multiple indicators align
-                if (ema_cross_down or rsi_overbought or bb_touch_upper):
+                # Sell when both EMA and RSI signals align for selling
+                elif ema_cross_down and rsi_overbought:
                     sell_signal = True
             
             buy_signals.append(buy_signal)
@@ -156,7 +109,7 @@ class AdvancedBacktester:
         return buy_signals, sell_signals
 
     def run_backtest_by_strategy(self, strategy_type, position_size_pct=0.1, stop_loss_pct=None, take_profit_pct=None, 
-                                rsi_buy_threshold=30, rsi_sell_threshold=70, bb_buy_threshold=20, bb_sell_threshold=80):
+                                rsi_buy_threshold=30, rsi_sell_threshold=70):
         """Run backtest with predefined strategy"""
         cash = self.initial_capital
         shares = 0
@@ -167,7 +120,7 @@ class AdvancedBacktester:
         
         # Generate signals based on strategy
         buy_signals, sell_signals = self.generate_signals_by_strategy(
-            strategy_type, rsi_buy_threshold, rsi_sell_threshold, bb_buy_threshold, bb_sell_threshold
+            strategy_type, rsi_buy_threshold, rsi_sell_threshold
         )
         
         for i, (date, row) in enumerate(self.data.iterrows()):
@@ -236,10 +189,10 @@ class AdvancedBacktester:
         return self.trades
 
 def main():
-    st.set_page_config(page_title="Advanced Investment Backtester", layout="wide")
-    st.title("📈 Advanced Investment Backtesting Platform")
+    st.set_page_config(page_title="Simple Investment Backtester", layout="wide")
+    st.title("📈 Simple Investment Backtesting Platform")
     st.markdown("""
-    Advanced backtesting with customizable indicators and trading strategies.
+    Simple backtesting with EMA and RSI strategies.
     """)
     
     # Define symbol groups
@@ -312,27 +265,27 @@ def main():
         options=[
             "EMA Crossover",
             "RSI Oversold/Oversold",
-            "Bollinger Bands",
-            "MACD Crossover",
             "Combined"
         ],
         index=0
     )
     
-    # Technical indicators settings
-    st.sidebar.subheader("Technical Indicators")
+    # Show indicators based on selected strategy
+    if strategy_type in ["EMA Crossover", "Combined"]:
+        st.sidebar.subheader("EMA Settings")
+        ema_fast = st.sidebar.slider("Fast EMA Window", 5, 50, 12)
+        ema_slow = st.sidebar.slider("Slow EMA Window", 5, 50, 26)
+    else:
+        ema_fast = 12  # Default values
+        ema_slow = 26
     
-    # EMA settings
-    ema_fast = st.sidebar.slider("Fast EMA Window", 5, 50, 12)
-    ema_slow = st.sidebar.slider("Slow EMA Window", 5, 50, 26)
-    
-    # RSI settings
-    rsi_buy_threshold = st.sidebar.slider("RSI Buy Threshold", 10, 50, 30)
-    rsi_sell_threshold = st.sidebar.slider("RSI Sell Threshold", 50, 90, 70)
-    
-    # Bollinger Bands settings
-    bb_window = st.sidebar.slider("BB Window", 10, 50, 20)
-    bb_std = st.sidebar.slider("BB Std Dev", 1, 3, 2)
+    if strategy_type in ["RSI Oversold/Oversold", "Combined"]:
+        st.sidebar.subheader("RSI Settings")
+        rsi_buy_threshold = st.sidebar.slider("RSI Buy Threshold", 10, 50, 30)
+        rsi_sell_threshold = st.sidebar.slider("RSI Sell Threshold", 50, 90, 70)
+    else:
+        rsi_buy_threshold = 30  # Default values
+        rsi_sell_threshold = 70
     
     # Position sizing
     st.sidebar.subheader("Position Sizing")
@@ -353,7 +306,7 @@ def main():
     if st.sidebar.button("Run Backtest"):
         with st.spinner("Running backtest (this may take a moment due to API rate limits)..."):
             try:
-                backtester = AdvancedBacktester(symbol, start_date, end_date, initial_capital)
+                backtester = SimpleBacktester(symbol, start_date, end_date, initial_capital)
                 
                 if backtester.load_data_with_delay():
                     backtester.add_indicators(ema_fast, ema_slow, 14)
@@ -390,25 +343,35 @@ def main():
         col2.metric("Initial Capital", f"${initial_capital:,}")
         col3.metric("Start Date", start_date.strftime("%Y-%m-%d"))
         col4.metric("End Date", end_date.strftime("%Y-%m-%d"))
-        col5, col6, col7, col8 = st.columns(4)
+        col5, col6 = st.columns(2)
         col5.metric("Strategy", strategy_type)
-        col6.metric("Fast EMA", ema_fast)
-        col7.metric("Slow EMA", ema_slow)
-        col8.metric("RSI Buy/Sell", f"{rsi_buy_threshold}/{rsi_sell_threshold}")
+        col6.metric("Position Size", f"{position_size*100:.0f}%")
+        
+        # Show strategy-specific parameters
+        if strategy_type in ["EMA Crossover", "Combined"]:
+            col7, col8 = st.columns(2)
+            col7.metric("Fast EMA", ema_fast)
+            col8.metric("Slow EMA", ema_slow)
+        
+        if strategy_type in ["RSI Oversold/Oversold", "Combined"]:
+            col9, col10 = st.columns(2)
+            col9.metric("RSI Buy", rsi_buy_threshold)
+            col10.metric("RSI Sell", rsi_sell_threshold)
         
         # Create charts
         fig = make_subplots(
             rows=3, cols=1, 
             shared_xaxes=True,
             vertical_spacing=0.08,
-            subplot_titles=(f'{symbol} Price & EMAs', 'RSI & Bollinger Bands', 'Portfolio Value'),
+            subplot_titles=(f'{symbol} Price & EMAs', 'RSI', 'Portfolio Value'),
             row_heights=[0.4, 0.3, 0.3]
         )
         
         # Price and EMAs
         fig.add_trace(go.Scatter(x=data.index, y=data['Close'], name='Close', line=dict(color='black')), row=1, col=1)
-        fig.add_trace(go.Scatter(x=data.index, y=data['EMA_Fast'], name=f'EMA{ema_fast}', line=dict(color='orange')), row=1, col=1)
-        fig.add_trace(go.Scatter(x=data.index, y=data['EMA_Slow'], name=f'EMA{ema_slow}', line=dict(color='blue')), row=1, col=1)
+        if strategy_type in ["EMA Crossover", "Combined"]:
+            fig.add_trace(go.Scatter(x=data.index, y=data['EMA_Fast'], name=f'EMA{ema_fast}', line=dict(color='orange')), row=1, col=1)
+            fig.add_trace(go.Scatter(x=data.index, y=data['EMA_Slow'], name=f'EMA{ema_slow}', line=dict(color='blue')), row=1, col=1)
         
         # Add buy/sell markers
         if trades:
@@ -435,15 +398,11 @@ def main():
                     marker=dict(color='red', size=10, symbol='triangle-down')
                 ), row=1, col=1)
         
-        # RSI and Bollinger Bands
-        fig.add_trace(go.Scatter(x=data.index, y=data['RSI'], name='RSI', line=dict(color='purple')), row=2, col=1)
-        fig.add_hline(y=rsi_sell_threshold, line_dash="dash", line_color="red", row=2, col=1, annotation_text="Sell Level")
-        fig.add_hline(y=rsi_buy_threshold, line_dash="dash", line_color="green", row=2, col=1, annotation_text="Buy Level")
-        
-        # Bollinger Bands
-        fig.add_trace(go.Scatter(x=data.index, y=data['BB_Upper'], name='BB Upper', line=dict(color='gray', dash='dash')), row=1, col=1)
-        fig.add_trace(go.Scatter(x=data.index, y=data['BB_Lower'], name='BB Lower', line=dict(color='gray', dash='dash')), row=1, col=1)
-        fig.add_trace(go.Scatter(x=data.index, y=data['BB_Middle'], name='BB Middle', line=dict(color='gray', dash='dash')), row=1, col=1)
+        # RSI
+        if strategy_type in ["RSI Oversold/Oversold", "Combined"]:
+            fig.add_trace(go.Scatter(x=data.index, y=data['RSI'], name='RSI', line=dict(color='purple')), row=2, col=1)
+            fig.add_hline(y=rsi_sell_threshold, line_dash="dash", line_color="red", row=2, col=1, annotation_text="Sell Level")
+            fig.add_hline(y=rsi_buy_threshold, line_dash="dash", line_color="green", row=2, col=1, annotation_text="Buy Level")
         
         # Portfolio value
         if 'Portfolio_Value' in data.columns:
