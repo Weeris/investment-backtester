@@ -46,7 +46,7 @@ class AdvancedBacktester:
         # Add random delay to avoid rate limiting
         time.sleep(random.uniform(0.5, 1.5))
         ticker = yf.Ticker(self.symbol)
-        self.data = ticker.history(start=self.start_date, end=end_date, interval="1d")
+        self.data = ticker.history(start=self.start_date, end=self.end_date, interval="1d")
         return not self.data.empty
 
     def add_indicators(self, ema_fast_window=12, ema_slow_window=26, rsi_window=14):
