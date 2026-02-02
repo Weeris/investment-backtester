@@ -384,14 +384,17 @@ class MultiCurrencyBacktester:
         self.data['ATR'] = calculate_atr(self.data, 14)
         self.data['SuperTrend'] = calculate_supertrend(self.data, supertrend_multiplier, supertrend_window)
 
-    def generate_signals_by_strategy(self, strategy_type, ema_slow_window=26, rsi_buy_threshold=30, rsi_sell_threshold=70):
+    def generate_signals_by_strategy(self, strategy_type, ema_slow_window=26, rsi_buy_threshold=30, rsi_sell_threshold=70, 
+                                    cdc_atr_multiplier=1.5, cdc_pivot_lookback=5):
         """Generate buy/sell signals based on selected strategy using closing prices"""
         buy_signals = []
         sell_signals = []
         
-        # Ensure we have enough data points for EMA calculations
+        # Ensure we have enough data points for calculations
         rsi_window = 14  # Standard RSI window
-        for i in range(max(ema_slow_window, rsi_window), len(self.data)):  # Using max window for safety
+        max_window = max(ema_slow_window, rsi_window, cdc_pivot_lookback)
+        
+        for i in range(max_window, len(self.data)):  # Using max window for safety
             current_row = self.data.iloc[i]
             prev_row = self.data.iloc[i-1]
             
@@ -418,7 +421,7 @@ class MultiCurrencyBacktester:
             elif strategy_type == "Buy and Hold":
                 # Buy and Hold strategy - Buy on first day, sell on last day
                 # Buy on the first available day
-                if i == max(ema_slow_window, rsi_window):  # First day where we have data for all indicators
+                if i == max_window:  # First day where we have data for all indicators
                     buy_signal = True
                 # Sell on the last day
                 elif i == len(self.data) - 1:
@@ -433,22 +436,25 @@ class MultiCurrencyBacktester:
                     # Sell when price moves below SuperTrend (downtrend)
                     elif prev_row["Close"] >= prev_row["SuperTrend"] and current_row["Close"] < current_row["SuperTrend"]:
                         sell_signal = True
-            
+
             elif strategy_type == "Chaloke CDC":
-                # Chaloke CDC strategy - Buy when bullish signal appears, Sell when bearish signal appears
-                # First, calculate CDC indicators for the current data
-                df_with_cdc = self.data.copy()
-                (bullish_signals, bearish_signals, cdc_trend, 
-                 support_levels, resistance_levels, signal_strength) = calculate_chaloke_cdc(df_with_cdc)
+                # Calculate CDC indicators for the current data up to this point
+                df_subset = self.data.iloc[:i+1].copy()  # Include current and previous data
                 
-                # Get the current and previous CDC signals
-                current_bullish = bullish_signals.iloc[i] if i < len(bullish_signals) else False
-                current_bearish = bearish_signals.iloc[i] if i < len(bearish_signals) else False
-                
-                if current_bullish:
-                    buy_signal = True
-                elif current_bearish:
-                    sell_signal = True
+                if len(df_subset) > cdc_pivot_lookback:  # Ensure we have enough data for CDC calculation
+                    (bullish_signals, bearish_signals, cdc_trend, 
+                     support_levels, resistance_levels, signal_strength) = calculate_chaloke_cdc(
+                         df_subset, atr_multiplier=cdc_atr_multiplier, pivot_lookback=cdc_pivot_lookback
+                     )
+                     
+                    # Get the current CDC signals
+                    current_bullish = bullish_signals.iloc[-1] if len(bullish_signals) > 0 else False
+                    current_bearish = bearish_signals.iloc[-1] if len(bearish_signals) > 0 else False
+                    
+                    if current_bullish:
+                        buy_signal = True
+                    elif current_bearish:
+                        sell_signal = True
 
             elif strategy_type == "Combined":
                 # Combined strategy using both EMA and RSI (using closing prices for indicators)
@@ -792,6 +798,8 @@ def main():
         st.sidebar.subheader("CDC Settings")
         cdc_atr_multiplier = st.sidebar.slider("ATR Multiplier", 0.5, 3.0, 1.5, 0.1)
         cdc_pivot_lookback = st.sidebar.slider("Pivot Lookback", 2, 20, 5)
+        ema_fast = 12  # Default values for EMA (needed for other calculations)
+        ema_slow = 26
     else:
         ema_fast = 12  # Default values
         ema_slow = 26
