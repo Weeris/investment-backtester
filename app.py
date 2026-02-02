@@ -513,110 +513,158 @@ def main():
     symbol_groups = {}
     if st.session_state.language == 'th':
         symbol_groups = {
-            "ดัชนี": [
-                ("^GSPC", "S&P 500"),
-                ("^STI", "ดัชนี SET"),
-                ("^SET50", "ดัชนี SET 50"),
-                ("^SET100", "ดัชนี SET 100")
-            ],
             "หุ้น US": [
                 ("AAPL", "Apple"),
-                ("NVDA", "NVIDIA"),
                 ("MSFT", "Microsoft"),
-                ("GOOGL", "Google"),
+                ("GOOGL", "Google (Alphabet)"),
                 ("AMZN", "Amazon"),
-                ("TSLA", "Tesla")
+                ("META", "Meta Platforms (Facebook)"),
+                ("NVDA", "NVIDIA"),
+                ("TSLA", "Tesla"),
+                ("JPM", "JPMorgan Chase"),
+                ("JNJ", "Johnson & Johnson"),
+                ("V", "Visa"),
+                ("PG", "Procter & Gamble")
             ],
-            "หุ้นต่างประเทศ": [
-                ("1810.HK", "Xiaomi"),  # Xiaomi stock symbol
-                ("2330.TW", "TSMC"),
-                ("BMW.DE", "BMW"),
-                ("NOKIA.HE", "Nokia")
+            "หุ้นเทคโนโลยีโลก": [
+                ("TSM", "TSMC (ไต้หวัน)"),
+                ("SONY", "Sony (ญี่ปุ่น)"),
+                ("TM", "Toyota (ญี่ปุ่น)"),
+                ("SAP", "SAP (เยอรมนี)"),
+                ("ASML", "ASML (เนเธอร์แลนด์)"),
+                ("NVO", "Novo Nordisk (เดนมาร์ก)"),
+                ("NESN", "Nestlé (สวิตเซอร์แลนด์)")
+            ],
+            "หุ้นเอเชีย": [
+                ("7203.T", "Toyota (ญี่ปุ่น)"),
+                ("9984.T", "SoftBank (ญี่ปุ่น)"),
+                ("005930.KS", "Samsung Electronics (เกาหลีใต้)"),
+                ("6502.T", "Hitachi (ญี่ปุ่น)"),
+                ("4689.T", "Fanuc (ญี่ปุ่น)"),
+                ("BABA", "Alibaba (จีน)"),
+                ("JD", "JD.com (จีน)")
+            ],
+            "หุ้นยุโรป": [
+                ("NOKIA.HE", "Nokia (ฟินแลนด์)"),
+                ("BMW.DE", "BMW (เยอรมนี)"),
+                ("SIE.DE", "Siemens (เยอรมนี)"),
+                ("AIR.PA", "Airbus (ฝรั่งเศส)"),
+                ("SAN.PA", "Sanofi (ฝรั่งเศส)"),
+                ("BP.L", "BP (อังกฤษ)"),
+                ("RIO.L", "Rio Tinto (อังกฤษ)")
             ],
             "หุ้นไทย": [
                 ("PTT.BK", "PTT"),
                 ("SCC.BK", "ซีเมนต์ไทย"),
                 ("CPALL.BK", "CP ALL"),
                 ("KBANK.BK", "ธนาคารกสิกรไทย"),
-                ("TRUE.BK", "TRUE")
-            ],
-            "สินทรัพย์อื่นๆ": [
-                ("GC=F", "ทองคำ SPOT"),  # Gold spot only
-                ("BTC-USD", "Bitcoin"),
-                ("ETH-USD", "Ethereum"),
-                ("XAU=", "ทองคำ")  # Keep both formats for gold
+                ("TRUE.BK", "TRUE"),
+                ("ADVANC.BK", "Advanced Info Service (AIS)"),
+                ("INTUCH.BK", "Intouch Holdings")
             ]
         }
     elif st.session_state.language == 'en':
         symbol_groups = {
-            "Indices": [
-                ("^GSPC", "S&P 500"),
-                ("^STI", "SET Index"),
-                ("^SET50", "SET 50"),
-                ("^SET100", "SET 100")
-            ],
             "US Stocks": [
                 ("AAPL", "Apple"),
-                ("NVDA", "NVIDIA"),
                 ("MSFT", "Microsoft"),
-                ("GOOGL", "Google"),
+                ("GOOGL", "Google (Alphabet)"),
                 ("AMZN", "Amazon"),
-                ("TSLA", "Tesla")
+                ("META", "Meta Platforms (Facebook)"),
+                ("NVDA", "NVIDIA"),
+                ("TSLA", "Tesla"),
+                ("JPM", "JPMorgan Chase"),
+                ("JNJ", "Johnson & Johnson"),
+                ("V", "Visa"),
+                ("PG", "Procter & Gamble")
             ],
-            "International Stocks": [
-                ("1810.HK", "Xiaomi"),  # Xiaomi stock symbol
-                ("2330.TW", "TSMC"),
-                ("BMW.DE", "BMW"),
-                ("NOKIA.HE", "Nokia")
+            "Global Tech Stocks": [
+                ("TSM", "TSMC (Taiwan)"),
+                ("SONY", "Sony (Japan)"),
+                ("TM", "Toyota (Japan)"),
+                ("SAP", "SAP (Germany)"),
+                ("ASML", "ASML (Netherlands)"),
+                ("NVO", "Novo Nordisk (Denmark)"),
+                ("NESN", "Nestlé (Switzerland)")
+            ],
+            "Asian Stocks": [
+                ("7203.T", "Toyota (Japan)"),
+                ("9984.T", "SoftBank (Japan)"),
+                ("005930.KS", "Samsung Electronics (South Korea)"),
+                ("6502.T", "Hitachi (Japan)"),
+                ("4689.T", "Fanuc (Japan)"),
+                ("BABA", "Alibaba (China)"),
+                ("JD", "JD.com (China)")
+            ],
+            "European Stocks": [
+                ("NOKIA.HE", "Nokia (Finland)"),
+                ("BMW.DE", "BMW (Germany)"),
+                ("SIE.DE", "Siemens (Germany)"),
+                ("AIR.PA", "Airbus (France)"),
+                ("SAN.PA", "Sanofi (France)"),
+                ("BP.L", "BP (UK)"),
+                ("RIO.L", "Rio Tinto (UK)")
             ],
             "Thai Stocks": [
                 ("PTT.BK", "PTT"),
                 ("SCC.BK", "Siam Cement"),
                 ("CPALL.BK", "CP ALL"),
                 ("KBANK.BK", "Kasikornbank"),
-                ("TRUE.BK", "TRUE Corporation")
-            ],
-            "Other Assets": [
-                ("GC=F", "Gold Spot"),  # Gold spot only
-                ("BTC-USD", "Bitcoin"),
-                ("ETH-USD", "Ethereum"),
-                ("XAU=", "Gold")  # Keep both formats for gold
+                ("TRUE.BK", "TRUE Corporation"),
+                ("ADVANC.BK", "Advanced Info Service (AIS)"),
+                ("INTUCH.BK", "Intouch Holdings")
             ]
         }
     else:  # zh
         symbol_groups = {
-            "指数": [
-                ("^GSPC", "标普500"),
-                ("^STI", "SET指数"),
-                ("^SET50", "SET 50"),
-                ("^SET100", "SET 100")
-            ],
             "美股": [
                 ("AAPL", "苹果"),
-                ("NVDA", "英伟达"),
                 ("MSFT", "微软"),
-                ("GOOGL", "谷歌"),
+                ("GOOGL", "谷歌 (Alphabet)"),
                 ("AMZN", "亚马逊"),
-                ("TSLA", "特斯拉")
+                ("META", "Meta平台 (Facebook)"),
+                ("NVDA", "英伟达"),
+                ("TSLA", "特斯拉"),
+                ("JPM", "摩根大通"),
+                ("JNJ", "强生公司"),
+                ("V", "Visa"),
+                ("PG", "宝洁公司")
             ],
-            "国际股票": [
-                ("1810.HK", "小米"),  # Xiaomi stock symbol
-                ("2330.TW", "台积电"),
-                ("BMW.DE", "宝马"),
-                ("NOKIA.HE", "诺基亚")
+            "全球科技股": [
+                ("TSM", "台积电 (台湾)"),
+                ("SONY", "索尼 (日本)"),
+                ("TM", "丰田 (日本)"),
+                ("SAP", "SAP (德国)"),
+                ("ASML", "ASML (荷兰)"),
+                ("NVO", "诺和诺德 (丹麦)"),
+                ("NESN", "雀巢 (瑞士)")
+            ],
+            "亚洲股票": [
+                ("7203.T", "丰田 (日本)"),
+                ("9984.T", "软银 (日本)"),
+                ("005930.KS", "三星电子 (韩国)"),
+                ("6502.T", "日立 (日本)"),
+                ("4689.T", "发那科 (日本)"),
+                ("BABA", "阿里巴巴 (中国)"),
+                ("JD", "京东 (中国)")
+            ],
+            "欧洲股票": [
+                ("NOKIA.HE", "诺基亚 (芬兰)"),
+                ("BMW.DE", "宝马 (德国)"),
+                ("SIE.DE", "西门子 (德国)"),
+                ("AIR.PA", "空中客车 (法国)"),
+                ("SAN.PA", "赛诺菲 (法国)"),
+                ("BP.L", "英国石油 (英国)"),
+                ("RIO.L", "力拓 (英国)")
             ],
             "泰国股票": [
                 ("PTT.BK", "PTT"),
                 ("SCC.BK", "暹罗水泥"),
                 ("CPALL.BK", "CP ALL"),
                 ("KBANK.BK", "开泰银行"),
-                ("TRUE.BK", "TRUE")
-            ],
-            "其他资产": [
-                ("GC=F", "现货黄金"),  # Gold spot only
-                ("BTC-USD", "比特币"),
-                ("ETH-USD", "以太坊"),
-                ("XAU=", "黄金")  # Keep both formats for gold
+                ("TRUE.BK", "TRUE"),
+                ("ADVANC.BK", "高级信息服务业 (AIS)"),
+                ("INTUCH.BK", "因特奇控股")
             ]
         }
 
