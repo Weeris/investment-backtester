@@ -791,6 +791,14 @@ def main():
         index=0
     )
 
+    # Initialize all strategy parameters with defaults first
+    ema_fast = 12
+    ema_slow = 26
+    cdc_atr_multiplier = 1.5  # Default CDC values
+    cdc_pivot_lookback = 5
+    rsi_buy_threshold = 30
+    rsi_sell_threshold = 70
+    
     # Show indicators based on selected strategy
     if strategy_type in ["EMA Crossover"]:
         st.sidebar.subheader(texts['ema_settings'])
@@ -803,10 +811,7 @@ def main():
         ema_fast = 12  # Default values for EMA (needed for other calculations)
         ema_slow = 26
     else:
-        ema_fast = 12  # Default values
-        ema_slow = 26
-        cdc_atr_multiplier = 1.5  # Default CDC values
-        cdc_pivot_lookback = 5
+        pass  # Use default values already initialized above
 
     # RSI settings are only needed for RSI strategy (which was removed)
     if strategy_type in []:
@@ -815,6 +820,7 @@ def main():
         rsi_sell_threshold = st.sidebar.slider(texts['sell_threshold'], 50, 90, 70)
     else:
         rsi_buy_threshold = 30  # Default values
+        rsi_sell_threshold = 70  # Default values
         rsi_sell_threshold = 70
 
     # Position sizing
